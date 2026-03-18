@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+.venv-1/
+
+# Nuitka build artifacts
+surfwolf74.build/
+surfwolf74.dist/
+nuitka/surfwolf74.build/
+nuitka/surfwolf74.dist/
+nuitka/__pycache__/
+nuitka/compilation-report.xml
+
+# Sensitive files
+key.json
+nuitka/key.json
+
+# Inno Setup output
+setup/*.exe
+
+# FFmpeg binaries (too large for git)
+*.dll
+nuitka/ffmpeg/
+
+# Office/docs
+*.pptx
+*.docx
+
+# Backup files
+*.py-back
+
+# Nuitka spec
+*.spec
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store

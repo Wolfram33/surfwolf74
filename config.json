@@ -1,0 +1,15 @@
+{
+    "js_enabled": true,
+    "security_mode": "normal",
+    "dark_mode": true,
+    "website_colors_inverted": false,
+    "color_theme": "darkblue",
+    "font_size_scale": 1.0,
+    "window_geometry": {
+        "x": 0,
+        "y": -7,
+        "width": 3413,
+        "height": 1369,
+        "maximized": true
+    }
+}
