@@ -11,6 +11,9 @@ Ein moderner Webbrowser basierend auf PyQt6 und Chromium (QtWebEngine).
 - Website-Blocker
 - Drag & Drop Support
 - Dark Mode
+- JavaScript zur Laufzeit aktivieren/deaktivieren
+- Individuelle Farbeinstellungen für die Browser-Oberfläche
+- Website-Farben invertieren (Invert-Modus)
 - Anpassbare Startseite
 - FFmpeg-Integration für Medien
 
