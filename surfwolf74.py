@@ -159,8 +159,11 @@ class DNTInterceptor(QWebEngineUrlRequestInterceptor):
                 info.block(True)
                 return
 
-            # Im Normal-Modus nur Sperrung prüfen, sonst nichts
+            # Im Normal-Modus Basis-Privacy-Header senden
             if self.mode == "normal":
+                info.setHttpHeader(b"DNT", b"1")
+                info.setHttpHeader(b"Sec-GPC", b"1")
+                info.setHttpHeader(b"Upgrade-Insecure-Requests", b"1")
                 return
 
             # Bypass für bestimmte Domains im Strict-Modus
@@ -1162,8 +1165,9 @@ class BrowserWindow(QMainWindow):
         # Standard: Default-Profil verwenden (normale Browser-Experience)
         if self.security_mode == "normal":
             self.profile = QWebEngineProfile.defaultProfile()
-            # Kein Interceptor im Normal-Modus - völlig unberührte Browser-Experience
-            self.interceptor = None
+            # Leichter Interceptor im Normal-Modus für Basis-Privacy (DNT, Mixed Content)
+            self.interceptor = DNTInterceptor(self.security_mode)
+            self.profile.setUrlRequestInterceptor(self.interceptor)
             
             # Media-Optimierungen für bessere Video-Kompatibilität (x.com, YouTube, etc.)
             self.profile.settings().setAttribute(
