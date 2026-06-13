@@ -22,12 +22,8 @@ nuitka/compilation-report.xml
 key.json
 nuitka/key.json
 
-# Inno Setup output
-setup/*.exe
-setup/setup.iss
-
-# Ignore large setup file
-setup/SurfWolf74-Setup.exe
+# Inno Setup: komplettes Setup-Verzeichnis ignorieren (Installer zu gross fuer git)
+setup/
 
 # FFmpeg binaries (too large for git)
 *.dll
