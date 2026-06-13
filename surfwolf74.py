@@ -3,6 +3,7 @@
 # Autor: Rob de Roy
 import sys
 import os
+import re
 import json
 import tempfile
 import webbrowser
@@ -39,6 +40,36 @@ START_IMAGE_PATH = os.path.join(APP_PATH, "surfwolf74.png")
 BOOKMARKS_FILE = os.path.join(APP_PATH, "bookmarks.json")
 CONFIG_FILE = os.path.join(APP_PATH, "config.json")
 BLOCKED_SITES_FILE = os.path.join(APP_PATH, "blocked_sites.json")
+
+
+# -------- User-Agent (eine Quelle der Wahrheit) --------
+# Fallback, falls die Engine-Version nicht ausgelesen werden kann.
+_FALLBACK_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+)
+_USER_AGENT_CACHE = None
+
+def get_user_agent():
+    """Liefert einen sauberen Chrome-User-Agent, dessen Versionsnummer zur
+    tatsächlich eingebauten QtWebEngine-/Chromium-Version passt.
+
+    Der QtWebEngine-Token wird entfernt, damit der Browser sich wie ein
+    normaler Chrome meldet (bessere Website-Kompatibilität, weniger auffälliges
+    Fingerprinting). So bleibt der UA automatisch aktuell und es gibt nur noch
+    eine Stelle statt mehrerer auseinanderdriftender Strings.
+    """
+    global _USER_AGENT_CACHE
+    if _USER_AGENT_CACHE:
+        return _USER_AGENT_CACHE
+    try:
+        # defaultProfile() benötigt eine laufende QApplication; sonst Fallback.
+        default_ua = QWebEngineProfile.defaultProfile().httpUserAgent()
+        ua = re.sub(r"\s*QtWebEngine/\S+", "", default_ua).strip()
+        _USER_AGENT_CACHE = ua if "Chrome/" in ua else _FALLBACK_USER_AGENT
+    except Exception:
+        _USER_AGENT_CACHE = _FALLBACK_USER_AGENT
+    return _USER_AGENT_CACHE
 
 
 # -------- Blocked Sites Management --------
@@ -1148,66 +1179,9 @@ class BrowserWindow(QMainWindow):
         
         self.load_config()
 
-        # Initialize drag colors for bookmark buttons
-        if hasattr(self, 'dark_mode') and self.dark_mode:
-            self.drag_colors = {
-                'pressed': "background-color: #5a2d2d; border: 2px solid #aa4444;",
-                'dragging': "background-color: #5a5a2d; border: 3px dashed #aaaa44;",
-                'drop_zone': "background-color: #2d5a2d; border: 2px solid #44aa44;"
-            }
-        else:
-            self.drag_colors = {
-                'pressed': "background-color: #ffcccc; border: 2px solid #ff6666;",
-                'dragging': "background-color: #ffffcc; border: 3px dashed #ff9900;",
-                'drop_zone': "background-color: #ccffcc; border: 2px solid #66cc66;"
-            }
-
-        # Standard: Default-Profil verwenden (normale Browser-Experience)
-        if self.security_mode == "normal":
-            self.profile = QWebEngineProfile.defaultProfile()
-            # Leichter Interceptor im Normal-Modus für Basis-Privacy (DNT, Mixed Content)
-            self.interceptor = DNTInterceptor(self.security_mode)
-            self.profile.setUrlRequestInterceptor(self.interceptor)
-            
-            # Media-Optimierungen für bessere Video-Kompatibilität (x.com, YouTube, etc.)
-            self.profile.settings().setAttribute(
-                self.profile.settings().WebAttribute.PluginsEnabled, True
-            )
-            self.profile.settings().setAttribute(
-                self.profile.settings().WebAttribute.JavascriptCanAccessClipboard, True
-            )
-            # WebGL für Video-Beschleunigung
-            self.profile.settings().setAttribute(
-                self.profile.settings().WebAttribute.WebGLEnabled, True
-            )
-            # Hardware-Beschleunigung für Videos
-            self.profile.settings().setAttribute(
-                self.profile.settings().WebAttribute.Accelerated2dCanvasEnabled, True
-            )
-            
-        else:
-            # Nur im Strict-Modus eigenes Profil mit Sicherheitsfeatures
-            self.profile = QWebEngineProfile("SurfWolf74StrictProfile", self)
-            
-            # Privacy-optimierte Profil-Einstellungen für browseraudit.com
-            self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.NoPersistentCookies)  # Keine persistenten Cookies
-            self.profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.MemoryHttpCache)  # Nur RAM-Cache
-            self.profile.setHttpCacheMaximumSize(0)  # Minimaler Cache
-            
-            # Download-Pfad sicher setzen
-            self.profile.setDownloadPath(tempfile.gettempdir())
-            
-            # Spell-Check deaktivieren (Privacy)
-            self.profile.setSpellCheckEnabled(False)
-            
-            self.interceptor = DNTInterceptor(self.security_mode)
-            self.profile.setUrlRequestInterceptor(self.interceptor)
-        
-        # User Agent für Website-Kompatibilität (Chrome 131)
-        self.profile.setHttpUserAgent(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        )
+        # Profil je nach Sicherheitsmodus aufbauen (siehe _create_profile).
+        # self.drag_colors wird gleich in apply_theme() aus THEME_COLORS gesetzt.
+        self.profile = self._create_profile(self.security_mode)
 
         self.setup_ui()
         
@@ -1251,6 +1225,33 @@ class BrowserWindow(QMainWindow):
         if not self.initial_tab_created:
             self.initial_tab_created = True
             self.add_new_tab()
+
+    def _create_profile(self, mode):
+        """Erzeugt und konfiguriert ein WebEngine-Profil für den gewählten
+        Sicherheitsmodus. Einzige Quelle der Wahrheit für Start und
+        Moduswechsel, damit die Konfiguration nicht auseinanderdriftet.
+        """
+        if mode == "normal":
+            profile = QWebEngineProfile.defaultProfile()
+            # Media-Optimierungen für bessere Video-Kompatibilität (x.com, YouTube, ...)
+            s = profile.settings()
+            s.setAttribute(s.WebAttribute.PluginsEnabled, True)
+            s.setAttribute(s.WebAttribute.JavascriptCanAccessClipboard, True)
+            s.setAttribute(s.WebAttribute.WebGLEnabled, True)
+            s.setAttribute(s.WebAttribute.Accelerated2dCanvasEnabled, True)
+        else:
+            # Strict-Modus: eigenes, privacy-optimiertes Profil
+            profile = QWebEngineProfile("SurfWolf74StrictProfile", self)
+            profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.NoPersistentCookies)
+            profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.MemoryHttpCache)
+            profile.setHttpCacheMaximumSize(0)
+            profile.setDownloadPath(tempfile.gettempdir())
+            profile.setSpellCheckEnabled(False)
+        # Für beide Modi gleich: Basis-Privacy-Interceptor (DNT etc.) + einheitlicher UA
+        self.interceptor = DNTInterceptor(mode)
+        profile.setUrlRequestInterceptor(self.interceptor)
+        profile.setHttpUserAgent(get_user_agent())
+        return profile
 
     def load_config(self):
         try:
@@ -1917,31 +1918,8 @@ class BrowserWindow(QMainWindow):
         self.security_mode = 'normal' if self.security_mode == 'strict' else 'strict'
         # Button-Text aktualisieren
         self.security_toggle_btn.setText("Sicherheit: " + ("Strikt" if self.security_mode == 'strict' else "Normal"))
-        # Profil komplett wechseln je nach Modus
-        if self.security_mode == "normal":
-            self.profile = QWebEngineProfile.defaultProfile()
-            self.interceptor = None
-        else:
-            self.profile = QWebEngineProfile("SurfWolf74StrictProfile", self)
-            
-            # Privacy-optimierte Profil-Einstellungen für browseraudit.com
-            self.profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.NoPersistentCookies)
-            self.profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.MemoryHttpCache)
-            self.profile.setHttpCacheMaximumSize(0)
-            
-            # Download-Pfad sicher setzen
-            self.profile.setDownloadPath(tempfile.gettempdir())
-            
-            # Spell-Check deaktivieren (Privacy)
-            self.profile.setSpellCheckEnabled(False)
-            
-            # Standard Chrome User Agent ohne Browser-spezifische Signatur
-            self.profile.setHttpUserAgent(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
-            self.interceptor = DNTInterceptor(self.security_mode)
-            self.profile.setUrlRequestInterceptor(self.interceptor)
+        # Profil komplett wechseln je nach Modus (gemeinsame Konfiguration)
+        self.profile = self._create_profile(self.security_mode)
         # Alle bestehenden Tabs müssen neu erstellt werden mit dem neuen Profil
         current_urls = []
         current_index = self.tabs.currentIndex()
