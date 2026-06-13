@@ -24,6 +24,10 @@ nuitka/key.json
 
 # Inno Setup output
 setup/*.exe
+setup/setup.iss
+
+# Ignore large setup file
+setup/SurfWolf74-Setup.exe
 
 # FFmpeg binaries (too large for git)
 *.dll

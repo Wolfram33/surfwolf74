@@ -6,7 +6,7 @@ import os
 import json
 import tempfile
 import webbrowser
-from PyQt6.QtCore import Qt, QUrl, QPoint, QStringListModel, QSize, QObject, QTimer, QMimeData
+from PyQt6.QtCore import Qt, QUrl, QPoint, QStringListModel, QSize, QObject, QTimer, QMimeData, QByteArray
 from PyQt6.QtGui import QIcon, QFont, QAction, QDrag
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QToolBar, QLineEdit, QStatusBar,
@@ -1235,6 +1235,14 @@ class BrowserWindow(QMainWindow):
             if geo.get('maximized', False):
                 self.showMaximized()
 
+        # Gespeichertes Toolbar-Layout wiederherstellen (verschobene Toolbars)
+        saved_state = getattr(self, '_saved_state', None)
+        if saved_state:
+            try:
+                self.restoreState(QByteArray.fromBase64(saved_state.encode('ascii')))
+            except Exception as e:
+                print(f"Toolbar-Layout wiederherstellen fehlgeschlagen: {e}")
+
         # Den ersten Tab mit minimaler Verzögerung erstellen (50ms für Profile-Stabilität)
         QTimer.singleShot(50, self.create_initial_tab)
 
@@ -1256,6 +1264,8 @@ class BrowserWindow(QMainWindow):
             self.font_size_scale = config.get('font_size_scale', 1.0)
             # Fensterposition und -größe
             self._saved_geometry = config.get('window_geometry', None)
+            # Toolbar-Layout (Base64-kodierter saveState-Blob)
+            self._saved_state = config.get('window_state', None)
         except Exception:
             self.js_enabled = True
             self.security_mode = 'normal'
@@ -1264,6 +1274,7 @@ class BrowserWindow(QMainWindow):
             self.current_color_name = 'lightgreen'
             self.font_size_scale = 1.0
             self._saved_geometry = None
+            self._saved_state = None
 
     def save_config(self):
         try:
@@ -1278,7 +1289,10 @@ class BrowserWindow(QMainWindow):
                     'x': self.x(), 'y': self.y(),
                     'width': self.width(), 'height': self.height(),
                     'maximized': self.isMaximized()
-                }
+                },
+                # Layout der verschiebbaren Toolbars (Position/Reihenfolge)
+                # als Base64-String, damit es JSON-kompatibel bleibt.
+                'window_state': bytes(self.saveState().toBase64()).decode('ascii')
             }
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=4)
@@ -1679,10 +1693,14 @@ class BrowserWindow(QMainWindow):
     def create_toolbars(self):
         # Erste Toolbar für Bedienelemente (links)
         self.main_toolbar = QToolBar("Bedienelemente")
+        # objectName ist Voraussetzung, damit saveState()/restoreState() die
+        # Position der Toolbar über Programmstarts hinweg merken kann.
+        self.main_toolbar.setObjectName("main_toolbar")
         self.addToolBar(self.main_toolbar)
-        
-        # Zweite Toolbar für Bookmarks (rechts) 
+
+        # Zweite Toolbar für Bookmarks (rechts)
         self.bookmarks_toolbar = QToolBar("Bookmarks")
+        self.bookmarks_toolbar.setObjectName("bookmarks_toolbar")
         self.addToolBar(self.bookmarks_toolbar)
         
         # LINKS: Alle Options-Elemente der GUI in der ersten Toolbar
