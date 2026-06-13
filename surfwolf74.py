@@ -34,6 +34,7 @@ def get_base_path():
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
+APP_VERSION = "5.2"
 APP_PATH = get_base_path()
 ICON_PATH = os.path.join(APP_PATH, "icon.ico")
 START_IMAGE_PATH = os.path.join(APP_PATH, "surfwolf74.png")
@@ -1151,7 +1152,7 @@ class BrowserWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Surfwolf74 | Version 5.0 | by Wolfram Consult GmbH & Co. KG")
+        self.setWindowTitle(f"Surfwolf74 | Version {APP_VERSION} | by Wolfram Consult GmbH & Co. KG")
         self.resize(1200, 800)
         self.current_color_name = 'lightgreen'
         self.font_scale = 1.0
