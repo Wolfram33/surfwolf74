@@ -721,6 +721,34 @@ class DraggableBookmarkButton(QToolButton):
         self.setStyleSheet("")
 
 class BrowserWindow(QMainWindow):
+    # Farbpalette (eine Quelle der Wahrheit): (interner Name, Hex-Code, Anzeige-Tooltip).
+    # Daraus wird sowohl das Name->Code-Mapping (color_themes) als auch die
+    # Button-Reihe in setup_ui() abgeleitet.
+    COLOR_THEMES = [
+        # Helle Farben
+        ("lightblue", "#87ceeb", "Helles Blau"),
+        ("lightgreen", "#caff70", "Helles Grün"),
+        ("lightorange", "#ffb347", "Helles Orange"),
+        ("lightgray", "#d3d3d3", "Helles Grau"),
+        ("lightbrown", "#deb887", "Helles Braun"),
+        ("lightyellow", "#ffff99", "Helles Gelb"),
+        ("lightpink", "#ffb6c1", "Helles Rosa"),
+        ("lightpurple", "#dda0dd", "Helles Lila"),
+        ("lightcyan", "#e0ffff", "Helles Cyan"),
+        ("lightcoral", "#f08080", "Helles Koralle"),
+        # Dunklere/Kräftigere Farben
+        ("winered", "#722f37", "Weinrot"),
+        ("darkblue", "#191970", "Dunkelblau"),
+        ("forestgreen", "#228b22", "Waldgrün"),
+        ("darkpurple", "#483d8b", "Dunkellila"),
+        ("maroon", "#800000", "Kastanienbraun"),
+        ("navy", "#000080", "Marine-Blau"),
+        ("darkslategray", "#2f4f4f", "Dunkelschiefer"),
+        ("chocolate", "#d2691e", "Schokoladenbraun"),
+        ("darkgoldenrod", "#b8860b", "Dunkles Goldgelb"),
+        ("crimson", "#dc143c", "Karmesinrot"),
+    ]
+
     def load_bookmarks(self):
         try:
             with open(BOOKMARKS_FILE, 'r', encoding='utf-8') as f:
@@ -1131,32 +1159,9 @@ class BrowserWindow(QMainWindow):
         self.js_enabled = True  # Standard: JS aktiviert
         self.security_mode = "normal"
         
-        # Farbschema-System - Erweiterte Farbpalette
+        # Farbschema-System - aus COLOR_THEMES abgeleitet (eine Quelle der Wahrheit)
         self.current_color = "#caff70"  # Standard: Hellgrün
-        self.color_themes = {
-            # Helle Farben
-            "lightblue": "#87ceeb",      # Helles Blau
-            "lightgreen": "#caff70",     # Helles Grün (Standard)
-            "lightorange": "#ffb347",    # Helles Orange
-            "lightgray": "#d3d3d3",      # Helles Grau
-            "lightbrown": "#deb887",     # Helles Braun
-            "lightyellow": "#ffff99",    # Helles Gelb
-            "lightpink": "#ffb6c1",      # Helles Rosa
-            "lightpurple": "#dda0dd",    # Helles Lila
-            "lightcyan": "#e0ffff",      # Helles Cyan
-            "lightcoral": "#f08080",     # Helles Koralle
-            # Dunklere/Kräftigere Farben
-            "winered": "#722f37",        # Weinrot
-            "darkblue": "#191970",       # Dunkelblau (Midnight Blue)
-            "forestgreen": "#228b22",    # Waldgrün
-            "darkpurple": "#483d8b",     # Dunkellila
-            "maroon": "#800000",         # Kastanienbraun
-            "navy": "#000080",           # Marine-Blau
-            "darkslategray": "#2f4f4f",  # Dunkelschiefer
-            "chocolate": "#d2691e",      # Schokoladenbraun
-            "darkgoldenrod": "#b8860b",  # Dunkles Goldgelb
-            "crimson": "#dc143c"         # Karmesinrot
-        }
+        self.color_themes = {name: code for name, code, _ in self.COLOR_THEMES}
         
         # Button-Referenzen für spätere Updates
         self.js_btn = None
@@ -1350,6 +1355,16 @@ class BrowserWindow(QMainWindow):
         }
     }
 
+    def _update_js_button(self):
+        """Setzt Text und (theme-abhaengige) Farbe des JS-Buttons.
+        Gemeinsam genutzt von apply_theme() und toggle_javascript()."""
+        if not getattr(self, 'js_btn', None):
+            return
+        c = self.THEME_COLORS[self.dark_mode]
+        self.js_btn.setText("JS " + ("An" if self.js_enabled else "Aus"))
+        js_bg = c['js_on_bg'] if self.js_enabled else c['js_off_bg']
+        self.js_btn.setStyleSheet(f"QPushButton {{ background-color: {js_bg}; color: white; }}")
+
     def apply_theme(self):
         """Wendet das aktuelle Theme (Light/Dark Mode) auf das gesamte Interface an"""
         c = self.THEME_COLORS[self.dark_mode]
@@ -1380,10 +1395,8 @@ class BrowserWindow(QMainWindow):
         if hasattr(self, 'add_fav_btn') and self.add_fav_btn:
             self.add_fav_btn.setStyleSheet(f"QPushButton {{ background-color: {c['fav_btn_bg']}; color: white; font-weight: bold; padding: 5px 10px; }}")
         
-        if hasattr(self, 'js_btn') and self.js_btn:
-            js_bg = c['js_on_bg'] if self.js_enabled else c['js_off_bg']
-            self.js_btn.setStyleSheet(f"QPushButton {{ background-color: {js_bg}; color: white; }}")
-        
+        self._update_js_button()
+
         if hasattr(self, 'block_site_btn') and self.block_site_btn:
             self.block_site_btn.setStyleSheet(f"QPushButton {{ background-color: {c['block_btn_bg']}; color: white; font-weight: bold; padding: 5px 10px; }}")
         
@@ -1617,34 +1630,9 @@ class BrowserWindow(QMainWindow):
         color_label.setStyleSheet("QPushButton { background: transparent; border: none; font-size: 16px; }")
         nav_layout.addWidget(color_label)
         
-        # Farbbuttons erstellen - Erweiterte Palette mit 20 Farben
+        # Farbbuttons erstellen - aus COLOR_THEMES (eine Quelle der Wahrheit)
         self.color_buttons = {}
-        colors = [
-            # Helle Farben (erste Reihe)
-            ("lightblue", "#87ceeb", "Helles Blau"),
-            ("lightgreen", "#caff70", "Helles Grün"),
-            ("lightorange", "#ffb347", "Helles Orange"),
-            ("lightgray", "#d3d3d3", "Helles Grau"),
-            ("lightbrown", "#deb887", "Helles Braun"),
-            ("lightyellow", "#ffff99", "Helles Gelb"),
-            ("lightpink", "#ffb6c1", "Helles Rosa"),
-            ("lightpurple", "#dda0dd", "Helles Lila"),
-            ("lightcyan", "#e0ffff", "Helles Cyan"),
-            ("lightcoral", "#f08080", "Helles Koralle"),
-            # Dunklere/Kräftigere Farben (zweite Reihe)
-            ("winered", "#722f37", "Weinrot"),
-            ("darkblue", "#191970", "Dunkelblau"),
-            ("forestgreen", "#228b22", "Waldgrün"),
-            ("darkpurple", "#483d8b", "Dunkellila"),
-            ("maroon", "#800000", "Kastanienbraun"),
-            ("navy", "#000080", "Marine-Blau"),
-            ("darkslategray", "#2f4f4f", "Dunkelschiefer"),
-            ("chocolate", "#d2691e", "Schokoladenbraun"),
-            ("darkgoldenrod", "#b8860b", "Dunkles Goldgelb"),
-            ("crimson", "#dc143c", "Karmesinrot")
-        ]
-        
-        for color_name, color_code, tooltip in colors:
+        for color_name, color_code, tooltip in self.COLOR_THEMES:
             btn = QPushButton()
             btn.setFixedSize(18, 18)  # Etwas kleiner für mehr Farben
             btn.setToolTip(f"Farbschema: {tooltip}")
@@ -1691,109 +1679,65 @@ class BrowserWindow(QMainWindow):
         # Erster Tab wird mit Verzögerung erstellt (siehe create_initial_tab)
         # Nicht hier: self.add_new_tab()
 
+    def _add_button(self, toolbar, text, slot=None, tooltip="", style=""):
+        """Erzeugt einen Toolbar-Button und haengt ihn an (reduziert Boilerplate).
+        Buttons ohne eigenen Style werden gleich von apply_theme() einheitlich gestylt.
+        """
+        btn = QPushButton(text)
+        if slot:
+            btn.clicked.connect(slot)
+        if tooltip:
+            btn.setToolTip(tooltip)
+        if style:
+            btn.setStyleSheet(style)
+        toolbar.addWidget(btn)
+        return btn
+
     def create_toolbars(self):
-        # Erste Toolbar für Bedienelemente (links)
+        # Zwei separat verschiebbare Toolbars. Der objectName ist Voraussetzung,
+        # damit saveState()/restoreState() die Position ueber Neustarts merkt.
         self.main_toolbar = QToolBar("Bedienelemente")
-        # objectName ist Voraussetzung, damit saveState()/restoreState() die
-        # Position der Toolbar über Programmstarts hinweg merken kann.
         self.main_toolbar.setObjectName("main_toolbar")
         self.addToolBar(self.main_toolbar)
 
-        # Zweite Toolbar für Bookmarks (rechts)
         self.bookmarks_toolbar = QToolBar("Bookmarks")
         self.bookmarks_toolbar.setObjectName("bookmarks_toolbar")
         self.addToolBar(self.bookmarks_toolbar)
-        
-        # LINKS: Alle Options-Elemente der GUI in der ersten Toolbar
-        
-        # Font Size Controls
-        self.font_smaller_btn = QPushButton("A-")
-        self.font_smaller_btn.clicked.connect(self.decrease_font_size)
-        self.font_smaller_btn.setToolTip("Schriftgröße verkleinern")
-        self.font_smaller_btn.setStyleSheet("QPushButton { background-color: #17a2b8; color: white; font-weight: bold; padding: 5px 8px; }")
-        self.main_toolbar.addWidget(self.font_smaller_btn)
-        
-        self.font_normal_btn = QPushButton("A")
-        self.font_normal_btn.clicked.connect(self.reset_font_size)
-        self.font_normal_btn.setToolTip("Schriftgröße zurücksetzen")
-        self.font_normal_btn.setStyleSheet("QPushButton { background-color: #6c757d; color: white; font-weight: bold; padding: 5px 8px; }")
-        self.main_toolbar.addWidget(self.font_normal_btn)
-        
-        self.font_larger_btn = QPushButton("A+")
-        self.font_larger_btn.clicked.connect(self.increase_font_size)
-        self.font_larger_btn.setToolTip("Schriftgröße vergrößern")
-        self.font_larger_btn.setStyleSheet("QPushButton { background-color: #17a2b8; color: white; font-weight: bold; padding: 5px 8px; }")
-        self.main_toolbar.addWidget(self.font_larger_btn)
-        
-        # Tastatur-Hilfe Button
-        keyboard_info_btn = QPushButton("⌨️ Tastatur-Hilfe")
-        keyboard_info_btn.clicked.connect(self.show_keyboard_help)
-        keyboard_info_btn.setToolTip("Tastaturkürzel und Navigation anzeigen")
-        keyboard_info_btn.setStyleSheet("QPushButton { background-color: #6f42c1; color: white; font-weight: bold; padding: 5px 10px; }")
-        self.main_toolbar.addWidget(keyboard_info_btn)
-        
-        # Separator zwischen Font-Controls und anderen Optionen
-        self.main_toolbar.addSeparator()
 
-        # JS Toggle Button
-        self.js_btn = QPushButton("JS " + ("An" if self.js_enabled else "Aus"))
-        self.js_btn.clicked.connect(self.toggle_javascript)
-        self.js_btn.setToolTip("JavaScript umschalten")
-        self.js_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; }" if self.js_enabled else "QPushButton { background-color: #f44336; color: white; }")
-        self.main_toolbar.addWidget(self.js_btn)
+        # Bedienelemente links. Die Farb-Styles (ausser Tastatur-Hilfe) setzt
+        # apply_theme() unmittelbar danach einheitlich -> hier kein Inline-Style.
+        mt = self.main_toolbar
+        self.font_smaller_btn = self._add_button(mt, "A-", self.decrease_font_size, "Schriftgröße verkleinern")
+        self.font_normal_btn = self._add_button(mt, "A", self.reset_font_size, "Schriftgröße zurücksetzen")
+        self.font_larger_btn = self._add_button(mt, "A+", self.increase_font_size, "Schriftgröße vergrößern")
+        self._add_button(mt, "⌨️ Tastatur-Hilfe", self.show_keyboard_help,
+                         "Tastaturkürzel und Navigation anzeigen",
+                         "QPushButton { background-color: #6f42c1; color: white; font-weight: bold; padding: 5px 10px; }")
+        mt.addSeparator()
+        self.js_btn = self._add_button(mt, "JS " + ("An" if self.js_enabled else "Aus"),
+                                       self.toggle_javascript, "JavaScript umschalten")
+        self.security_toggle_btn = self._add_button(
+            mt, "Sicherheit: " + ("Strikt" if self.security_mode == 'strict' else "Normal"),
+            self.toggle_security_mode,
+            "Zwischen sehr restriktivem und normalem Sicherheitsmodus umschalten")
+        self.dark_mode_btn = self._add_button(mt, "🌙 Dark" if not self.dark_mode else "☀️ Light",
+                                              self.toggle_dark_mode,
+                                              "Zwischen Dark Mode und Light Mode umschalten")
+        self.website_invert_btn = self._add_button(
+            mt, "🌗 Farben Invert" if not self.website_colors_inverted else "🌗 Farben Normal",
+            self.toggle_website_colors,
+            "Website-Farben invertieren für bessere Lesbarkeit bei hellen Seiten")
+        self.block_site_btn = self._add_button(mt, "🚫 Websites verwalten",
+                                               self.show_website_blocking_menu,
+                                               "Websites sperren/entsperren")
 
-        # Security Toggle Button
-        self.security_toggle_btn = QPushButton("Sicherheit: " + ("Strikt" if self.security_mode == 'strict' else "Normal"))
-        self.security_toggle_btn.clicked.connect(self.toggle_security_mode)
-        self.security_toggle_btn.setToolTip("Zwischen sehr restriktivem und normalem Sicherheitsmodus umschalten")
-        self.main_toolbar.addWidget(self.security_toggle_btn)
+        # Bookmarks-Toolbar (separat verschiebbar)
+        self.add_fav_btn = self._add_button(self.bookmarks_toolbar, "⭐ Zu Favoriten",
+                                            self.add_bookmark, "Aktuelle Seite zu Favoriten hinzufügen")
 
-        # Dark Mode Toggle Button
-        self.dark_mode_btn = QPushButton("🌙 Dark" if not self.dark_mode else "☀️ Light")
-        self.dark_mode_btn.clicked.connect(self.toggle_dark_mode)
-        self.dark_mode_btn.setToolTip("Zwischen Dark Mode und Light Mode umschalten")
-        if self.dark_mode:
-            self.dark_mode_btn.setStyleSheet("QPushButton { background-color: #1a1a1a; color: #ffd700; font-weight: bold; }")
-        else:
-            self.dark_mode_btn.setStyleSheet("QPushButton { background-color: #ffd700; color: #000000; font-weight: bold; }")
-        self.main_toolbar.addWidget(self.dark_mode_btn)
-
-        # Website-Farben invertieren Button
-        self.website_invert_btn = QPushButton("🌗 Farben Invert" if not self.website_colors_inverted else "🌗 Farben Normal")
-        self.website_invert_btn.clicked.connect(self.toggle_website_colors)
-        self.website_invert_btn.setToolTip("Website-Farben invertieren für bessere Lesbarkeit bei hellen Seiten")
-        if self.dark_mode:
-            color = "#5a5a2d" if self.website_colors_inverted else "#404040"
-        else:
-            color = "#ffc107" if self.website_colors_inverted else "#f8f9fa"
-        self.website_invert_btn.setStyleSheet(f"QPushButton {{ background-color: {color}; color: {'white' if self.dark_mode else 'black'}; font-weight: bold; }}")
-        self.main_toolbar.addWidget(self.website_invert_btn)
-
-        # Website-Sperr-Button
-        self.block_site_btn = QPushButton("🚫 Websites verwalten")
-        self.block_site_btn.clicked.connect(self.show_website_blocking_menu)
-        self.block_site_btn.setToolTip("Websites sperren/entsperren")
-        self.block_site_btn.setStyleSheet("QPushButton { background-color: #f44336; color: white; font-weight: bold; padding: 5px 10px; }")
-        self.main_toolbar.addWidget(self.block_site_btn)
-
-        # === BOOKMARKS TOOLBAR (SEPARAT VERSCHIEBBAR) ===
-        
-        # Zu Favoriten hinzufügen Button in der Bookmarks-Toolbar
-        self.add_fav_btn = QPushButton("⭐ Zu Favoriten")
-        self.add_fav_btn.setToolTip("Aktuelle Seite zu Favoriten hinzufügen")
-        self.add_fav_btn.clicked.connect(self.add_bookmark)
-        self.add_fav_btn.setStyleSheet("QPushButton { background-color: #007bff; color: white; font-weight: bold; padding: 5px 10px; }")
-        self.bookmarks_toolbar.addWidget(self.add_fav_btn)
-
-        # Position für Bookmark-Einfügung in der Bookmarks-Toolbar merken
+        # Einfuegeposition fuer Favoriten merken, dann Favoriten laden
         self.bookmark_insert_position = len(self.bookmarks_toolbar.actions())
-
-        # Favoriten laden - sie werden an der richtigen Position eingefügt
         self.load_bookmarks()
-        
-        # Die alte Accessibility-Toolbar wird nicht mehr benötigt, da alles in der Haupttoolbar ist
-
-    # LEGACY: create_accessibility_toolbar() - Funktionalität wurde in create_toolbars() integriert
 
     def increase_font_size(self):
         """Vergrößert die Schriftgröße"""
@@ -1898,9 +1842,8 @@ class BrowserWindow(QMainWindow):
 
     def toggle_javascript(self):
         self.js_enabled = not self.js_enabled
-        # Button-Text und Farbe aktualisieren
-        self.js_btn.setText("JS " + ("An" if self.js_enabled else "Aus"))
-        self.js_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; }" if self.js_enabled else "QPushButton { background-color: #f44336; color: white; }")
+        # Button-Text und (theme-abhaengige) Farbe aktualisieren
+        self._update_js_button()
         # Alle offenen Tabs aktualisieren
         for i in range(self.tabs.count()):
             tab = self.tabs.widget(i)
