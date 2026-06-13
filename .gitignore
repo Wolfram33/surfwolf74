@@ -36,9 +36,6 @@ nuitka/ffmpeg/
 # Backup files
 *.py-back
 
-# Nuitka spec
-*.spec
-
 # OS files
 Thumbs.db
 Desktop.ini
