@@ -112,10 +112,10 @@ def is_site_blocked(host):
     return False
 
 
-# -------- CSP Interceptor (BROWSERAUDIT-OPTIMIERT) --------
+# -------- Request-Interceptor (Privacy-Header, Ad-Blocking, Sicherheits-Header) --------
 class DNTInterceptor(QWebEngineUrlRequestInterceptor):
     # Klassen-Konstanten: einmal erstellt, bei jedem Request wiederverwendet
-    BYPASS_DOMAINS = frozenset(["wolframgruppe.de", "investing.com", "browseraudit.com"])
+    BYPASS_DOMAINS = frozenset(["wolframgruppe.de", "investing.com"])
     BLOCK_PATTERNS = frozenset([
         'doubleclick.net', 'googlesyndication.com', 'googletagmanager.com',
         'google-analytics.com', 'adservice.google.com', 'facebook.com/tr',
@@ -132,35 +132,12 @@ class DNTInterceptor(QWebEngineUrlRequestInterceptor):
         'revcontent.com', 'adcolony.com', 'adap.tv', 'adtechus.com'
     ])
 
-    # Vorberechnete Header-Bytes für browseraudit.com
-    _PERMISSIONS_BROWSERAUDIT = (
-        "geolocation=(), microphone=(), camera=(), payment=(), usb=(), midi=(), "
-        "serial=(), bluetooth=(), magnetometer=(), gyroscope=(), accelerometer=(), "
-        "ambient-light-sensor=(), autoplay=(self), encrypted-media=(self), "
-        "fullscreen=(self), picture-in-picture=(self), display-capture=(), "
-        "web-share=(self), screen-wake-lock=(), publickey-credentials-get=(self)"
-    ).encode('utf-8')
     _PERMISSIONS_STRICT = (
         "geolocation=(), microphone=(), camera=(), payment=(), usb=(), midi=(), "
         "serial=(), bluetooth=(), magnetometer=(), gyroscope=(), accelerometer=(), "
         "ambient-light-sensor=(), autoplay=(), encrypted-media=(), fullscreen=(), "
         "picture-in-picture=(), display-capture=(), web-share=(), "
         "screen-wake-lock=(), publickey-credentials-get=()"
-    ).encode('utf-8')
-    _CSP_BROWSERAUDIT = (
-        "default-src 'self' https://browseraudit.com https://test.browseraudit.com; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://browseraudit.com https://test.browseraudit.com; "
-        "style-src 'self' 'unsafe-inline' https://browseraudit.com https://test.browseraudit.com; "
-        "img-src 'self' data: https: https://browseraudit.com https://test.browseraudit.com; "
-        "connect-src 'self' https: wss: ws: https://browseraudit.com https://test.browseraudit.com wss://browseraudit.com; "
-        "font-src 'self' https: https://browseraudit.com https://test.browseraudit.com; "
-        "media-src 'self' https://browseraudit.com https://test.browseraudit.com; "
-        "object-src 'none'; base-uri 'self'; "
-        "form-action 'self' https://browseraudit.com https://test.browseraudit.com; "
-        "frame-ancestors 'self' https://browseraudit.com https://test.browseraudit.com; "
-        "worker-src 'self' https://browseraudit.com https://test.browseraudit.com; "
-        "manifest-src 'self' https://browseraudit.com https://test.browseraudit.com; "
-        "upgrade-insecure-requests"
     ).encode('utf-8')
     _CSP_STRICT = (
         "default-src 'none'; "
@@ -200,7 +177,7 @@ class DNTInterceptor(QWebEngineUrlRequestInterceptor):
 
             # Bypass für bestimmte Domains im Strict-Modus
             if any(domain in host for domain in self.BYPASS_DOMAINS):
-                self._set_security_headers(info, host)
+                self._set_security_headers(info)
                 return
 
             # Ad-Blocker im Strict-Modus
@@ -209,15 +186,13 @@ class DNTInterceptor(QWebEngineUrlRequestInterceptor):
                 info.block(True)
                 return
 
-            self._set_security_headers(info, host)
+            self._set_security_headers(info)
 
         except Exception as e:
             print(f"Interceptor Fehler: {e}")
 
-    def _set_security_headers(self, info, host):
-        """Setzt Sicherheitsheader - host wird einmal übergeben statt 6x neu berechnet"""
-        is_audit = "browseraudit.com" in host
-
+    def _set_security_headers(self, info):
+        """Setzt einheitliche Privacy- und Sicherheitsheader im Strict-Modus."""
         # Privacy Headers
         info.setHttpHeader(b"DNT", b"1")
         info.setHttpHeader(b"Sec-GPC", b"1")
@@ -226,30 +201,18 @@ class DNTInterceptor(QWebEngineUrlRequestInterceptor):
         info.setHttpHeader(b"Expect-CT", b"max-age=86400, enforce")
         info.setHttpHeader(b"X-Permitted-Cross-Domain-Policies", b"none")
 
-        if is_audit:
-            info.setHttpHeader(b"X-Frame-Options", b"ALLOWALL")
-            info.setHttpHeader(b"Referrer-Policy", b"origin")
-            info.setHttpHeader(b"Permissions-Policy", self._PERMISSIONS_BROWSERAUDIT)
-            info.setHttpHeader(b"Cross-Origin-Embedder-Policy", b"unsafe-none")
-            info.setHttpHeader(b"Cross-Origin-Opener-Policy", b"unsafe-none")
-            info.setHttpHeader(b"Cross-Origin-Resource-Policy", b"cross-origin")
-            info.setHttpHeader(b"Access-Control-Expose-Headers", b"Content-Length, Content-Type, Date, Connection, Cache-Control, Pragma, Expires")
-            info.setHttpHeader(b"Content-Security-Policy", self._CSP_BROWSERAUDIT)
-            info.setHttpHeader(b"Strict-Transport-Security", b"max-age=31536000; includeSubDomains")
-            info.setHttpHeader(b"Cache-Control", b"public, max-age=3600")
-            info.setHttpHeader(b"Pragma", b"cache")
-        else:
-            info.setHttpHeader(b"X-Frame-Options", b"SAMEORIGIN")
-            info.setHttpHeader(b"Referrer-Policy", b"no-referrer")
-            info.setHttpHeader(b"Permissions-Policy", self._PERMISSIONS_STRICT)
-            info.setHttpHeader(b"Cross-Origin-Embedder-Policy", b"require-corp")
-            info.setHttpHeader(b"Cross-Origin-Opener-Policy", b"same-origin")
-            info.setHttpHeader(b"Cross-Origin-Resource-Policy", b"same-origin")
-            info.setHttpHeader(b"Content-Security-Policy", self._CSP_STRICT)
-            info.setHttpHeader(b"Strict-Transport-Security", b"max-age=31536000; includeSubDomains; preload")
-            info.setHttpHeader(b"Cache-Control", b"no-cache, no-store, must-revalidate")
-            info.setHttpHeader(b"Pragma", b"no-cache")
-            info.setHttpHeader(b"Expires", b"0")
+        # Sicherheitsheader (einheitlich für alle Seiten)
+        info.setHttpHeader(b"X-Frame-Options", b"SAMEORIGIN")
+        info.setHttpHeader(b"Referrer-Policy", b"no-referrer")
+        info.setHttpHeader(b"Permissions-Policy", self._PERMISSIONS_STRICT)
+        info.setHttpHeader(b"Cross-Origin-Embedder-Policy", b"require-corp")
+        info.setHttpHeader(b"Cross-Origin-Opener-Policy", b"same-origin")
+        info.setHttpHeader(b"Cross-Origin-Resource-Policy", b"same-origin")
+        info.setHttpHeader(b"Content-Security-Policy", self._CSP_STRICT)
+        info.setHttpHeader(b"Strict-Transport-Security", b"max-age=31536000; includeSubDomains; preload")
+        info.setHttpHeader(b"Cache-Control", b"no-cache, no-store, must-revalidate")
+        info.setHttpHeader(b"Pragma", b"no-cache")
+        info.setHttpHeader(b"Expires", b"0")
 
 
 # -------- Custom WebEnginePage --------
@@ -349,7 +312,7 @@ class BrowserTab(QWebEngineView):
         # Navigation kontrollieren für Sicherheit
         settings.setAttribute(QWebEngineSettings.WebAttribute.FocusOnNavigationEnabled, True)
         
-        # Zusätzliche Sicherheitsattribute für browseraudit.com Tests
+        # Weitere Anzeige-/Sicherheitsattribute
         settings.setAttribute(QWebEngineSettings.WebAttribute.AutoLoadImages, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.SpatialNavigationEnabled, False)
         settings.setAttribute(QWebEngineSettings.WebAttribute.LinksIncludedInFocusChain, False)
@@ -1883,7 +1846,7 @@ class BrowserWindow(QMainWindow):
         if current_index < self.tabs.count():
             self.tabs.setCurrentIndex(current_index)
         self.statusBar().showMessage(
-            f"Sicherheitsmodus: {'BrowserAudit-Optimiert (Anti-Fingerprinting + Strict CSP)' if self.security_mode == 'strict' else 'Normal (Standard-Browser-Verhalten)'}", 
+            f"Sicherheitsmodus: {'Strikt (Anti-Fingerprinting + Strict CSP)' if self.security_mode == 'strict' else 'Normal (Standard-Browser-Verhalten)'}", 
             5000
         )
 
