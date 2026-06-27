@@ -17,7 +17,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-pyqt6.qtwebengine \
         xvfb x11vnc novnc websockify openbox \
-        x11-xserver-utils fonts-dejavu-core ca-certificates \
+        x11-xserver-utils fonts-dejavu-core fonts-noto-color-emoji ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # App + Assets (Build-Kontext = Projekt-Root)

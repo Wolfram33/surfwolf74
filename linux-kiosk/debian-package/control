@@ -3,7 +3,7 @@ Version: @VERSION@
 Architecture: all
 Maintainer: Rob de Roy <kontakt@wolfram-consult.com>
 Depends: python3, python3-pyqt6.qtwebengine
-Recommends: fonts-dejavu-core
+Recommends: fonts-dejavu-core, fonts-noto-color-emoji
 Section: web
 Priority: optional
 Homepage: https://github.com/Wolfram33/surfwolf74
