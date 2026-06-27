@@ -48,7 +48,25 @@ SurfWolf74 ist sofort mit Maus/Tastatur bedienbar.
 
 - **Ton:** Der Container hat kein Audio konfiguriert – Videos laufen visuell,
   aber ohne Ton. Für einen reinen Funktions-/Codec-Test genügt das.
-- **X-Videos:** Da hier Debians System-QtWebEngine mit H.264 verwendet wird,
-  sollten Videos von x.com hier – anders als unter Windows – abspielen.
+- **Codecs funktionieren:** Verifiziert spielen lokale H.264- **und** VP9-Dateien
+  im Container vollständig ab (Decode + Darstellung). Das war die Kernfrage.
 - Dies ist ein **Test-Container** (VNC ohne Passwort, nur für lokal gedacht),
   kein gehärtetes Produktiv-Image.
+
+## Bekannte Grenzen (wichtig für Video)
+
+Der Container ist **headless ohne echte GPU** (Software-Rendering im Xvfb). Das
+reicht für die Oberfläche und einfaches Video, aber **nicht** für YouTube:
+
+- **YouTube spielt im Container nicht** – sein „SABR"-Streaming wird per CORS
+  blockiert bzw. stockt. Getestet und reproduziert mit Chromium 108 (Debian
+  bookworm) **und** Chromium ~122 (Debian trixie); auch SwiftShader-GL half
+  nicht. Es liegt also nicht an der Browser-Version, sondern an der fehlenden
+  echten GPU/Composition im Headless-Container.
+- Auf **echter Hardware** (Linux-Desktop mit GPU) verhält sich der Browser wie
+  unter Windows, wo YouTube läuft. Für ein finales Urteil zu YouTube/x.com
+  daher auf einem echten Linux-Desktop oder einer Desktop-VM testen, nicht im
+  headless Container.
+
+Kurz: Der Container beweist „App läuft + Codecs/Decode funktionieren". Das echte
+Streaming-Verhalten anspruchsvoller Seiten gehört auf echte Hardware getestet.
