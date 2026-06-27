@@ -21,13 +21,21 @@ docker run --rm -p 8090:8080 surfwolf74-test
 
 ## 3. Im Webbrowser öffnen
 
-    http://localhost:8090/vnc.html
+    http://localhost:8090/
 
-Dann auf **Connect** klicken – SurfWolf74 erscheint im Browserfenster und ist
-mit Maus/Tastatur bedienbar.
+Verbindet automatisch und **skaliert auf dein Fenster** (kein kleiner Rahmen).
+SurfWolf74 ist sofort mit Maus/Tastatur bedienbar.
+
+> Falls du die alte Ansicht willst: `http://localhost:8090/vnc.html`. Wirkt das
+> Bild dort klein, im Zahnrad-Menü **Scaling Mode → Local Scaling** wählen –
+> oder direkt `…/vnc.html?autoconnect=true&resize=scale` öffnen.
 
 ## Optionen
 
+- **Auflösung** des virtuellen Bildschirms anpassen (Standard 1920x1080):
+  ```bash
+  docker run --rm -p 8090:8080 -e SCREEN=1600x900 surfwolf74-test
+  ```
 - **Vollbild-/Kiosk-Modus** (statt normalem Fenster):
   ```bash
   docker run --rm -p 8090:8080 -e KIOSK=1 surfwolf74-test
