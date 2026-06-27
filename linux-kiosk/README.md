@@ -8,6 +8,15 @@ zusätzlich **X-Videos (H.264)** ab, was unter Windows nicht geht.
 > enthält nur die zusätzliche Linux-/Kiosk-Schicht; sie lädt den Browser und
 > erzwingt den Vollbild-Modus zur Laufzeit (Monkeypatch), ohne den Code zu ändern.
 
+## Schnell testen ohne eigene Linux-Maschine (Docker)
+Es gibt einen fertigen Test-Container mit Web-Oberfläche (noVNC) – siehe
+[`docker/README.md`](docker/README.md). Kurz:
+```sh
+docker build -f linux-kiosk/docker/Dockerfile -t surfwolf74-test .
+docker run --rm -p 8090:8080 surfwolf74-test
+# dann im Browser: http://localhost:8090/vnc.html  ->  Connect
+```
+
 ## Warum Debian (wichtig!)
 Die H.264/AAC-Codecs (für X-Videos) stecken **nur** in Debians
 System-Paket `python3-pyqt6.qtwebengine` — **nicht** in den pip-Wheels und
