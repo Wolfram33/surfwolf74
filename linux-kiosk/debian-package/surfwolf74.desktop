@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=SurfWolf74
+GenericName=Webbrowser
+Comment=Schlanker, datensparsamer Webbrowser (PyQt6/Chromium)
+Exec=surfwolf74 %u
+Icon=surfwolf74
+Terminal=false
+Categories=Network;WebBrowser;
+MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
+StartupNotify=true

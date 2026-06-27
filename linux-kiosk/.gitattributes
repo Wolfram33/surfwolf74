@@ -1,0 +1,6 @@
+# Diese Dateien laufen auf Linux und MUESSEN LF-Zeilenenden behalten,
+# sonst bricht der Shebang (#!/bin/sh) bzw. das dpkg-Format unter Debian/Ubuntu.
+*.sh text eol=lf
+*.desktop text eol=lf
+debian-package/surfwolf74 text eol=lf
+debian-package/control text eol=lf

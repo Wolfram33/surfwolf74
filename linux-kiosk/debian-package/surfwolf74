@@ -1,0 +1,27 @@
+#!/bin/sh
+# SurfWolf74-Launcher (installiert nach /usr/bin/surfwolf74).
+#
+# /usr ist schreibgeschuetzt, der Browser schreibt Config/Lesezeichen aber
+# neben sein eigenes Skript. Daher spiegeln wir App + Standarddaten in ein
+# beschreibbares Nutzerverzeichnis und starten von dort. So bleibt
+# surfwolf74.py unveraendert und Nutzerdaten liegen pro Benutzer.
+
+SRC=/usr/lib/surfwolf74
+DEST="${XDG_DATA_HOME:-$HOME/.local/share}/surfwolf74"
+
+mkdir -p "$DEST"
+
+# Programmcode + statische Assets bei jedem Start aktualisieren (Updates!)
+cp -f "$SRC/surfwolf74.py" "$DEST/" 2>/dev/null || true
+for f in surfwolf74.png icon.ico icon.png folder.png; do
+    [ -f "$SRC/$f" ] && cp -f "$SRC/$f" "$DEST/" 2>/dev/null || true
+done
+
+# Nutzerdaten nur beim ersten Start anlegen (vorhandene NICHT ueberschreiben)
+for f in bookmarks.json config.json blocked_sites.json; do
+    if [ ! -f "$DEST/$f" ] && [ -f "$SRC/$f" ]; then
+        cp "$SRC/$f" "$DEST/" 2>/dev/null || true
+    fi
+done
+
+exec python3 "$DEST/surfwolf74.py" "$@"

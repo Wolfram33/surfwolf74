@@ -1,0 +1,2 @@
+# Gebaute Paket-Artefakte (werden via build.sh erzeugt, nicht versionieren)
+*.deb

@@ -1,0 +1,16 @@
+Package: surfwolf74
+Version: @VERSION@
+Architecture: all
+Maintainer: Rob de Roy <kontakt@wolfram-consult.com>
+Depends: python3, python3-pyqt6.qtwebengine
+Recommends: fonts-dejavu-core
+Section: web
+Priority: optional
+Homepage: https://github.com/Wolfram33/surfwolf74
+Description: SurfWolf74 - schlanker PyQt6/Chromium-Webbrowser
+ Datensparsamer Webbrowser auf Basis von PyQt6 und QtWebEngine: Tab-Browsing,
+ Lesezeichen, Website-Blocker, Dark Mode und farbige Themen.
+ .
+ Nutzt das System-QtWebEngine (inkl. H.264/AAC-Codecs), daher funktioniert
+ die Videowiedergabe auch auf Seiten wie x.com, die unter den pip-Wheels
+ ohne proprietaere Codecs nicht abspielen.
