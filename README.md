@@ -1,21 +1,22 @@
 # SurfWolf74
 
-Ein moderner Webbrowser basierend auf PyQt6 und Chromium (QtWebEngine).
+Ein moderner, datensparsamer Webbrowser auf Basis von PyQt6 und Chromium
+(QtWebEngine). Läuft unter **Windows und Linux** (Debian/Ubuntu).
 
 ![SurfWolf74](screenshot-surfwolf74.jpg)
 
 ## Features
 
 - Tab-basiertes Browsing
-- Lesezeichen-Verwaltung
+- Lesezeichen-Verwaltung (mit Drag & Drop)
 - Website-Blocker
-- Drag & Drop Support
-- Dark Mode
-- JavaScript zur Laufzeit aktivieren/deaktivieren
-- Individuelle Farbeinstellungen für die Browser-Oberfläche
+- Dark Mode und individuelle Farbthemen
 - Website-Farben invertieren (Invert-Modus)
+- JavaScript zur Laufzeit aktivieren/deaktivieren
+- Normaler und strikter Sicherheitsmodus (Privacy-Header, Anti-Fingerprinting)
 - Anpassbare Startseite
-- FFmpeg-Integration für Medien
+- Verschiebbare Toolbars (Position wird gemerkt)
+- Aktuelle Seite im System-Browser öffnen (Strg+E)
 
 ## Voraussetzungen
 
@@ -23,21 +24,53 @@ Ein moderner Webbrowser basierend auf PyQt6 und Chromium (QtWebEngine).
 - PyQt6
 - PyQt6-WebEngine
 
-## Installation
+## Installation und Start
+
+### Aus dem Quellcode (Windows & Linux)
 
 ```bash
 pip install PyQt6 PyQt6-WebEngine
-```
-
-## Starten
-
-```bash
 python surfwolf74.py
 ```
 
-## Build (Windows)
+### Linux: natives Paket (Debian/Ubuntu)
 
-Das Projekt kann mit [Nuitka](https://nuitka.net/) kompiliert werden. Ein Inno Setup Script für den Windows-Installer liegt unter `setup/setup.iss`.
+Im Verzeichnis [`linux-kiosk/`](linux-kiosk/) liegt ein nativer `.deb`-Installer.
+Er nutzt Debians **System-QtWebEngine** und installiert alle Abhängigkeiten
+automatisch:
+
+```bash
+sh linux-kiosk/debian-package/build.sh                  # erzeugt surfwolf74_<version>_all.deb
+sudo apt install ./linux-kiosk/surfwolf74_<version>_all.deb
+```
+
+Danach ist „SurfWolf74" im Anwendungsmenü und über den Befehl `surfwolf74`
+verfügbar.
+
+## Videowiedergabe / Codecs (wichtig)
+
+QtWebEngine spielt MP4/H.264-Videos nur mit proprietären Codecs ab.
+
+- **Windows / pip-Wheels:** ohne H.264 gebaut. Seiten, die ausschließlich
+  H.264 streamen (z. B. x.com), spielen **nicht im Browser** – dafür gibt es
+  den Button **„🌐 Extern" (Strg+E)**, der die Seite im System-Browser öffnet.
+  YouTube u. a. (VP9) funktionieren normal.
+- **Linux (Debian/Ubuntu, System-Paket):** `python3-pyqt6.qtwebengine` ist
+  **mit** H.264/AAC gebaut – dort spielt auch x.com direkt im Browser.
+
+## Build / Distribution
+
+- **Windows:** Kompilieren mit [Nuitka](https://nuitka.net/) – der genaue
+  Befehl steht in [`kombilieren.txt`](kombilieren.txt). Der Windows-Installer
+  wird anschließend mit Inno Setup gepackt.
+- **Linux:** siehe `.deb`-Installer oben.
+
+## Linux-Kiosk-Appliance (optional)
+
+[`linux-kiosk/`](linux-kiosk/) enthält außerdem die Bausteine, um einen PC
+direkt in SurfWolf74 booten zu lassen (Vollbild, kein Desktop) – inklusive
+`kiosk.py` (Vollbild-Start ohne Änderung am Browser) und Autostart-Skripten.
+Details in [`linux-kiosk/README.md`](linux-kiosk/README.md).
 
 ## Lizenz
 
