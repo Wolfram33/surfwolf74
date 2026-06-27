@@ -36,10 +36,12 @@ SurfWolf74 ist sofort mit Maus/Tastatur bedienbar.
   ```bash
   docker run --rm -p 8090:8080 -e SCREEN=1600x900 surfwolf74-test
   ```
-- **Vollbild-/Kiosk-Modus** (statt normalem Fenster):
+- **Fenster-Modus** statt Vollbild (Vollbild ist Standard):
   ```bash
-  docker run --rm -p 8090:8080 -e KIOSK=1 surfwolf74-test
+  docker run --rm -p 8090:8080 -e KIOSK=0 surfwolf74-test
   ```
+  Hinweis: Im Container kann das normale Fenster wegen des Maximier-Timings
+  versetzt rendern – fürs Testen ist daher der Vollbild-Standard empfohlen.
 - **Beenden:** Im Terminal `Strg+C` (Container läuft mit `--rm`, räumt sich auf).
 
 ## Hinweise

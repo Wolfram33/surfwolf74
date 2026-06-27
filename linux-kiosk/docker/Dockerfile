@@ -10,7 +10,8 @@ FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
     DISPLAY=:99 \
-    QTWEBENGINE_DISABLE_SANDBOX=1
+    QTWEBENGINE_DISABLE_SANDBOX=1 \
+    QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox --disable-gpu --disable-dev-shm-usage"
 
 # System-QtWebEngine (mit Codecs) + virtuelles Display + VNC/noVNC + Mini-WM
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -31,6 +32,8 @@ RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 # noVNC-Weboberflaeche
 EXPOSE 8080
 
-# KIOSK=1 -> Vollbild (kiosk.py), sonst normales (maximiertes) Fenster
-ENV KIOSK=0
+# Vollbild (kiosk.py) ist die Standard-Testansicht und rendert im Headless-X
+# zuverlaessig zentriert. KIOSK=0 -> normales Fenster (kann im Container wegen
+# des Maximier-Timings versetzt rendern).
+ENV KIOSK=1
 CMD ["/entrypoint.sh"]
