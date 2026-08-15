@@ -92,6 +92,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $notes = "Automatischer Windows-Build von master (Commit ${{ github.sha }}). Entwicklungs-Build, kein stabiles Release."
+          $notes = @(
+            "Automatischer Windows-Build von master (Commit ${{ github.sha }}). Entwicklungs-Build, kein stabiles Release.",
+            "",
+            "**Hinweis zu Videos (Windows):** Reine H.264-Videos (z. B. **x.com / Twitter**) spielen aus Lizenzgruenden **nicht** im Browser ab; YouTube u. a. (VP9) laufen normal. Fuer H.264-Seiten den Button **Extern (Strg+E)** nutzen - er oeffnet die Seite im System-Browser. Die Linux-Version spielt H.264 nativ ab."
+          )
+          Set-Content -Path release-notes.md -Value $notes -Encoding utf8
           gh release delete latest-dev --yes --cleanup-tag
-          gh release create latest-dev --prerelease --title "Latest development build (v${{ steps.ver.outputs.version }})" --notes "$notes" "dist\SurfWolf74-Setup.exe" "dist\SurfWolf74-portable.zip"
+          gh release create latest-dev --prerelease --title "Latest development build (v${{ steps.ver.outputs.version }})" --notes-file release-notes.md "dist\SurfWolf74-Setup.exe" "dist\SurfWolf74-portable.zip"

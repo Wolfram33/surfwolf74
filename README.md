@@ -12,6 +12,14 @@ Alternativ ohne Installation: **[Portable-ZIP](https://github.com/Wolfram33/surf
 > Der Download wird bei jeder Änderung automatisch neu gebaut (GitHub Actions).
 > Alle Versionen: **[Releases](https://github.com/Wolfram33/surfwolf74/releases)**.
 
+> [!IMPORTANT]
+> **Videowiedergabe unter Windows:** Aus Lizenzgründen spielt die Windows-Version
+> **keine reinen H.264-Videos** ab – das betrifft vor allem **x.com / Twitter**.
+> YouTube und die meisten anderen Seiten (VP9) laufen normal.
+> Für H.264-Seiten den Button **„🌐 Extern" (Strg+E)** nutzen: Er öffnet die
+> aktuelle Seite im System-Browser (Chrome/Edge), der H.264 kann.
+> Die **Linux-Version** spielt H.264 (und damit x.com) dagegen **nativ** ab.
+
 ![SurfWolf74](screenshot-surfwolf74.jpg)
 
 ## Features
