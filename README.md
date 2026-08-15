@@ -3,6 +3,15 @@
 Ein moderner, datensparsamer Webbrowser auf Basis von PyQt6 und Chromium
 (QtWebEngine). Läuft unter **Windows und Linux** (Debian/Ubuntu).
 
+## ⬇️ Download für Windows
+
+**[▶ SurfWolf74-Setup.exe herunterladen](https://github.com/Wolfram33/surfwolf74/releases/download/latest-dev/SurfWolf74-Setup.exe)** — installieren und starten, **kein Python nötig**.
+
+Alternativ ohne Installation: **[Portable-ZIP](https://github.com/Wolfram33/surfwolf74/releases/download/latest-dev/SurfWolf74-portable.zip)** (entpacken, `surfwolf74.exe` starten).
+
+> Der Download wird bei jeder Änderung automatisch neu gebaut (GitHub Actions).
+> Alle Versionen: **[Releases](https://github.com/Wolfram33/surfwolf74/releases)**.
+
 ![SurfWolf74](screenshot-surfwolf74.jpg)
 
 ## Features
