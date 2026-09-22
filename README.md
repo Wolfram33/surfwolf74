@@ -75,6 +75,31 @@ QtWebEngine spielt MP4/H.264-Videos nur mit proprietären Codecs ab.
 - **Linux (Debian/Ubuntu, System-Paket):** `python3-pyqt6.qtwebengine` ist
   **mit** H.264/AAC gebaut – dort spielt auch x.com direkt im Browser.
 
+## Flackern bei Live-Seiten (Grafik-Backend)
+
+Seiten, die sich per Polling ständig aktualisieren (Dashboards, Live-Ticker,
+Chats), können unter Windows flackern. Ursache ist die Kombination aus Qts
+Direct3D-11-Anzeige und Chromiums eigenem Renderer, die auf manchen
+Grafiktreibern nicht sauber synchronisieren. SurfWolf74 stellt Qt deshalb
+standardmäßig auf OpenGL um – Qts offizieller Rückfall für solche Fälle.
+
+Umschaltbar in `config.json` über den Schlüssel `render_backend`:
+
+| Wert | Bedeutung |
+|------|-----------|
+| `opengl` (Standard) | Qt zeichnet über OpenGL – meist flackerfrei |
+| `d3d11` | Qt-Standard unter Windows erzwingen (zum Vergleich) |
+| `auto` | Nichts setzen, Qt entscheidet selbst |
+
+Die Änderung wirkt erst nach einem Neustart. Zum schnellen Ausprobieren
+ohne Datei-Änderung geht auch die Umgebungsvariable `QSG_RHI_BACKEND`
+(z. B. `QSG_RHI_BACKEND=d3d11`), sie hat Vorrang vor der Konfiguration.
+Unter Linux ist die Einstellung wirkungslos (dort ist OpenGL ohnehin Standard).
+
+Zusätzlich wird der Invert-Modus („🌗 Farben") als Profil-Skript vor dem
+ersten Zeichnen jeder Seite eingefügt; die helle Seite blitzt beim Navigieren
+nicht mehr kurz auf.
+
 ## Build / Distribution
 
 - **Windows:** Kompilieren mit [Nuitka](https://nuitka.net/) – der genaue

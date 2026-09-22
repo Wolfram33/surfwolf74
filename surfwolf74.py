@@ -34,13 +34,119 @@ def get_base_path():
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
-APP_VERSION = "5.2"
+APP_VERSION = "5.3"
 APP_PATH = get_base_path()
 ICON_PATH = os.path.join(APP_PATH, "icon.ico")
 START_IMAGE_PATH = os.path.join(APP_PATH, "surfwolf74.png")
 BOOKMARKS_FILE = os.path.join(APP_PATH, "bookmarks.json")
 CONFIG_FILE = os.path.join(APP_PATH, "config.json")
 BLOCKED_SITES_FILE = os.path.join(APP_PATH, "blocked_sites.json")
+
+
+# -------- Grafik-Backend (gegen Flackern) --------
+# Qt 6 zeichnet QWebEngineView unter Windows standardmäßig über Direct3D 11,
+# während Chromium selbst über ANGLE rendert. Auf manchen Treibern flackert
+# die Seite dann bei häufigen DOM-Updates (Polling/Live-Daten). Der Qt-eigene
+# Rückfall lautet QSG_RHI_BACKEND=opengl – das ist hier die Voreinstellung.
+# Umschaltbar über "render_backend" in config.json (siehe README).
+RENDER_BACKENDS = ("opengl", "d3d11", "auto")
+DEFAULT_RENDER_BACKEND = "opengl"
+
+
+def read_render_backend_from_config():
+    """Liest "render_backend" aus config.json, bevor Qt geladen wird.
+    Ungültige oder fehlende Werte fallen auf DEFAULT_RENDER_BACKEND zurück."""
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            value = json.load(f).get('render_backend', DEFAULT_RENDER_BACKEND)
+    except Exception:
+        return DEFAULT_RENDER_BACKEND
+    if isinstance(value, str) and value.strip().lower() in RENDER_BACKENDS:
+        return value.strip().lower()
+    print(f"config.json: unbekanntes render_backend {value!r} – nutze {DEFAULT_RENDER_BACKEND}")
+    return DEFAULT_RENDER_BACKEND
+
+
+def configure_render_backend():
+    """Setzt QSG_RHI_BACKEND VOR dem Erzeugen der QApplication.
+    Nur unter Windows relevant (Linux nutzt ohnehin OpenGL). Eine bereits
+    gesetzte Umgebungsvariable hat Vorrang, damit sich das Verhalten zum
+    Testen ohne Code-Änderung übersteuern lässt."""
+    if sys.platform != "win32":
+        return
+    backend = read_render_backend_from_config()
+    if backend == "auto":
+        return  # Qt-Standard (Direct3D 11) unverändert lassen
+    os.environ.setdefault("QSG_RHI_BACKEND", backend)
+
+
+# -------- Website-Farben invertieren (eine Quelle der Wahrheit) --------
+INVERT_STYLE_ID = "surfwolf-invert-colors"
+INVERT_SCRIPT_NAME = "surfwolf-invert-colors"
+INVERT_CSS = """
+html {
+    filter: invert(1) hue-rotate(180deg) !important;
+}
+img, video, iframe, svg, canvas, embed, object {
+    filter: invert(1) hue-rotate(180deg) !important;
+}
+[style*="background-image"] {
+    filter: invert(1) hue-rotate(180deg) !important;
+}
+"""
+
+# Idempotent: fügt das Style-Element nur ein, wenn es noch fehlt. Ein
+# Entfernen-und-neu-Einfügen würde die Seite für einen Frame un-invertiert
+# zeichnen und damit sichtbar flackern.
+# Beim Injection-Point DocumentCreation existiert <html> noch nicht; dann
+# wartet ein MutationObserver auf das Wurzelelement und hängt das Style-
+# Element sofort beim Entstehen an – noch vor dem ersten Zeichnen.
+INVERT_APPLY_JS = f"""
+(function() {{
+    function apply() {{
+        var root = document.head || document.documentElement;
+        if (!root) return false;
+        if (!document.getElementById({INVERT_STYLE_ID!r})) {{
+            var style = document.createElement('style');
+            style.id = {INVERT_STYLE_ID!r};
+            style.appendChild(document.createTextNode({INVERT_CSS!r}));
+            root.appendChild(style);
+        }}
+        return true;
+    }}
+    if (apply()) return;
+    var observer = new MutationObserver(function() {{
+        if (apply()) observer.disconnect();
+    }});
+    observer.observe(document, {{ childList: true }});
+}})();
+"""
+
+INVERT_REMOVE_JS = f"""
+(function() {{
+    var style = document.getElementById({INVERT_STYLE_ID!r});
+    if (style) style.remove();
+}})();
+"""
+
+
+def sync_invert_script(profile, enabled):
+    """Registriert (oder entfernt) das Inversions-Skript am Profil.
+    Als QWebEngineScript mit Injection-Point DocumentCreation greift es,
+    bevor die Seite das erste Mal gezeichnet wird – kein Aufblitzen der
+    hellen Seite beim Navigieren und keine Timer-Nachbesserung nötig."""
+    scripts = profile.scripts()
+    for old in scripts.find(INVERT_SCRIPT_NAME):
+        scripts.remove(old)
+    if not enabled:
+        return
+    script = QWebEngineScript()
+    script.setName(INVERT_SCRIPT_NAME)
+    script.setSourceCode(INVERT_APPLY_JS)
+    script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
+    script.setWorldId(QWebEngineScript.ScriptWorldId.ApplicationWorld)
+    script.setRunsOnSubFrames(True)
+    scripts.insert(script)
 
 
 # -------- User-Agent (eine Quelle der Wahrheit) --------
@@ -317,7 +423,11 @@ class BrowserTab(QWebEngineView):
         settings.setAttribute(QWebEngineSettings.WebAttribute.SpatialNavigationEnabled, False)
         settings.setAttribute(QWebEngineSettings.WebAttribute.LinksIncludedInFocusChain, False)
         settings.setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
-        settings.setAttribute(QWebEngineSettings.WebAttribute.Accelerated2dCanvasEnabled, False)  # Fingerprinting-Schutz
+        # Software-Canvas nur im Strict-Modus (Fingerprinting-Schutz). Im
+        # Normal-Modus bleibt die GPU-Beschleunigung des Profils erhalten –
+        # sonst ruckeln/flackern Live-Charts und Dashboards mit Canvas.
+        if browser_window.security_mode == "strict":
+            settings.setAttribute(QWebEngineSettings.WebAttribute.Accelerated2dCanvasEnabled, False)
         
         # Font-Einstellungen für native Windows-Schriften (Anti-Fingerprinting)
         if browser_window.security_mode == "strict":
@@ -1220,6 +1330,8 @@ class BrowserWindow(QMainWindow):
         self.interceptor = DNTInterceptor(mode)
         profile.setUrlRequestInterceptor(self.interceptor)
         profile.setHttpUserAgent(get_user_agent())
+        # Inversions-Skript passend zum gespeicherten Zustand registrieren
+        sync_invert_script(profile, self.website_colors_inverted)
         return profile
 
     def load_config(self):
@@ -1232,6 +1344,7 @@ class BrowserWindow(QMainWindow):
             self.website_colors_inverted = config.get('website_colors_inverted', False)
             self.current_color_name = config.get('color_theme', 'lightgreen')
             self.font_size_scale = config.get('font_size_scale', 1.0)
+            self.render_backend = read_render_backend_from_config()
             # Fensterposition und -größe
             self._saved_geometry = config.get('window_geometry', None)
             # Toolbar-Layout (Base64-kodierter saveState-Blob)
@@ -1243,6 +1356,7 @@ class BrowserWindow(QMainWindow):
             self.website_colors_inverted = False
             self.current_color_name = 'lightgreen'
             self.font_size_scale = 1.0
+            self.render_backend = DEFAULT_RENDER_BACKEND
             self._saved_geometry = None
             self._saved_state = None
 
@@ -1255,6 +1369,8 @@ class BrowserWindow(QMainWindow):
                 'website_colors_inverted': self.website_colors_inverted,
                 'color_theme': getattr(self, 'current_color_name', 'lightgreen'),
                 'font_size_scale': self.font_size_scale,
+                # Grafik-Backend (wird vor Qt-Start gelesen, hier nur erhalten)
+                'render_backend': getattr(self, 'render_backend', DEFAULT_RENDER_BACKEND),
                 'window_geometry': {
                     'x': self.x(), 'y': self.y(),
                     'width': self.width(), 'height': self.height(),
@@ -1401,51 +1517,19 @@ class BrowserWindow(QMainWindow):
         """Invertiert die Farben aller Websites für bessere Lesbarkeit bei hellen Seiten"""
         self.website_colors_inverted = not self.website_colors_inverted
         self.save_config()
-        
-        # CSS für Farb-Inversion auf allen Tabs anwenden
-        invert_css = """
-        html {
-            filter: invert(1) hue-rotate(180deg) !important;
-        }
-        img, video, iframe, svg, canvas, embed, object {
-            filter: invert(1) hue-rotate(180deg) !important;
-        }
-        [style*="background-image"] {
-            filter: invert(1) hue-rotate(180deg) !important;
-        }
-        """ if self.website_colors_inverted else ""
-        
-        # Auf alle Tabs anwenden
+
+        # Künftige Seitenaufrufe: Skript am Profil (greift vor dem ersten Zeichnen)
+        sync_invert_script(self.profile, self.website_colors_inverted)
+
+        # Bereits geladene Seiten sofort nachziehen
         for i in range(self.tabs.count()):
             tab = self.tabs.widget(i)
             if hasattr(tab, 'page'):
                 if self.website_colors_inverted:
-                    tab.page().runJavaScript(f"""
-                        // Altes Style-Element entfernen falls vorhanden
-                        var oldStyle = document.getElementById('surfwolf-invert-colors');
-                        if (oldStyle) oldStyle.remove();
-                        
-                        // Neues Style-Element erstellen
-                        var style = document.createElement('style');
-                        style.id = 'surfwolf-invert-colors';
-                        style.type = 'text/css';
-                        var css = `{invert_css}`;
-                        
-                        // CSS sicher einfügen
-                        if (style.styleSheet) {{
-                            style.styleSheet.cssText = css;
-                        }} else {{
-                            style.appendChild(document.createTextNode(css));
-                        }}
-                        
-                        document.head.appendChild(style);
-                    """)
+                    self.apply_website_inversion_to_tab(tab)
                 else:
-                    tab.page().runJavaScript("""
-                        var style = document.getElementById('surfwolf-invert-colors');
-                        if (style) style.remove();
-                    """)
-        
+                    tab.page().runJavaScript(INVERT_REMOVE_JS, QWebEngineScript.ScriptWorldId.ApplicationWorld)
+
         # Button aktualisieren
         if hasattr(self, 'website_invert_btn') and self.website_invert_btn:
             self.website_invert_btn.setText("🌗 Farben Normal" if self.website_colors_inverted else "🌗 Farben Invert")
@@ -1454,46 +1538,15 @@ class BrowserWindow(QMainWindow):
             else:
                 color = "#ffc107" if self.website_colors_inverted else "#f8f9fa"
             self.website_invert_btn.setStyleSheet(f"QPushButton {{ background-color: {color}; color: {'white' if self.dark_mode else 'black'}; font-weight: bold; }}")
-        
+
         print(f"{'🌗 Website-Farben invertiert' if self.website_colors_inverted else '🌗 Website-Farben normal'}")
 
     def apply_website_inversion_to_tab(self, tab):
-        """Wendet die Farb-Inversion auf einen spezifischen Tab an (für neue Tabs)"""
+        """Wendet die Farb-Inversion auf eine bereits geladene Seite an
+        (idempotent – neue Seitenaufrufe erledigt das Profil-Skript)."""
         if not self.website_colors_inverted or not hasattr(tab, 'page'):
             return
-        
-        invert_css = """
-        html {
-            filter: invert(1) hue-rotate(180deg) !important;
-        }
-        img, video, iframe, svg, canvas, embed, object {
-            filter: invert(1) hue-rotate(180deg) !important;
-        }
-        [style*="background-image"] {
-            filter: invert(1) hue-rotate(180deg) !important;
-        }
-        """
-        
-        tab.page().runJavaScript(f"""
-            // Altes Style-Element entfernen falls vorhanden
-            var oldStyle = document.getElementById('surfwolf-invert-colors');
-            if (oldStyle) oldStyle.remove();
-            
-            // Neues Style-Element erstellen
-            var style = document.createElement('style');
-            style.id = 'surfwolf-invert-colors';
-            style.type = 'text/css';
-            var css = `{invert_css}`;
-            
-            // CSS sicher einfügen
-            if (style.styleSheet) {{
-                style.styleSheet.cssText = css;
-            }} else {{
-                style.appendChild(document.createTextNode(css));
-            }}
-            
-            document.head.appendChild(style);
-        """)
+        tab.page().runJavaScript(INVERT_APPLY_JS, QWebEngineScript.ScriptWorldId.ApplicationWorld)
 
 
 
@@ -1994,11 +2047,7 @@ class BrowserWindow(QMainWindow):
         # Link-Hover auch für den Tab selbst aktivieren (falls Page-Signal nicht funktioniert)
         tab.page().linkHovered.connect(self.on_link_hovered)
         
-        # Website-Farben Inversion anwenden falls aktiviert
-        if self.website_colors_inverted:
-            # Kurze Verzögerung damit die Seite geladen ist
-            QTimer.singleShot(500, lambda: self.apply_website_inversion_to_tab(tab))
-        
+        # Farb-Inversion: erledigt das am Profil registrierte Skript beim Laden
         return tab
 
 
@@ -2024,9 +2073,6 @@ class BrowserWindow(QMainWindow):
                 # Status-Update nach dem Laden
                 if success:
                     self.statusBar().showMessage("Seite geladen", 2000)
-                    # Website-Farben Inversion anwenden falls aktiviert
-                    if self.website_colors_inverted:
-                        QTimer.singleShot(100, lambda: self.apply_website_inversion_to_tab(tab))
                 else:
                     self.statusBar().showMessage("Fehler beim Laden der Seite", 3000)
 
@@ -2037,9 +2083,10 @@ class BrowserWindow(QMainWindow):
 
 # -------- main --------
 def main():
-    # 0. Minimale GPU-Anpassungen: Nur Skia-SharedImage-Fehler beheben, Performance beibehalten
-    # Sicherheitshinweis: --no-sandbox wurde entfernt (Sicherheitsrisiko)
-    
+    # 0. Grafik-Backend festlegen (muss VOR QApplication passieren, siehe
+    #    configure_render_backend). Sicherheitshinweis: kein --no-sandbox.
+    configure_render_backend()
+
     # 1. ZUERST: view-source registrieren (vor QApplication!)
     register_view_source()
 

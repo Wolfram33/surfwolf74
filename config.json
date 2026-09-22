@@ -11,5 +11,6 @@
         "width": 3413,
         "height": 1369,
         "maximized": true
-    }
+    },
+    "render_backend": "opengl"
 }
