@@ -26,6 +26,7 @@ from PyQt6.QtWebEngineCore import (
     QWebEngineScript
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6 import sip
 
 
 
@@ -197,6 +198,126 @@ def sync_invert_script(profile, enabled):
     script.setSourceCode(INVERT_APPLY_JS)
     script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
     script.setWorldId(QWebEngineScript.ScriptWorldId.ApplicationWorld)
+    script.setRunsOnSubFrames(True)
+    scripts.insert(script)
+
+
+# -------- Anti-Fingerprinting (Strict-Modus) --------
+ANTI_FINGERPRINT_SCRIPT_NAME = "surfwolf-anti-fingerprint"
+ANTI_FINGERPRINT_JS = """
+
+        (function() {
+            console.log('SurfWolf74: Anti-Fingerprinting Script aktiviert');
+            
+            // Screen Resolution spoofing
+            Object.defineProperty(screen, 'width', { value: 1920, writable: false });
+            Object.defineProperty(screen, 'height', { value: 1080, writable: false });
+            Object.defineProperty(screen, 'availWidth', { value: 1920, writable: false });
+            Object.defineProperty(screen, 'availHeight', { value: 1040, writable: false });
+            Object.defineProperty(screen, 'colorDepth', { value: 24, writable: false });
+            Object.defineProperty(screen, 'pixelDepth', { value: 24, writable: false });
+            
+            // Timezone spoofing
+            Date.prototype.getTimezoneOffset = function() { return 0; };
+            
+            // Language spoofing
+            Object.defineProperty(navigator, 'language', { value: 'en-US', writable: false });
+            Object.defineProperty(navigator, 'languages', { value: ['en-US', 'en'], writable: false });
+            
+            // Platform spoofing
+            Object.defineProperty(navigator, 'platform', { value: 'Win32', writable: false });
+            
+            // Hardware concurrency spoofing
+            Object.defineProperty(navigator, 'hardwareConcurrency', { value: 4, writable: false });
+            
+            // Device memory spoofing
+            if ('deviceMemory' in navigator) {
+                Object.defineProperty(navigator, 'deviceMemory', { value: 8, writable: false });
+            }
+            
+            // WebGL fingerprinting protection
+            const getParameter = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                if (parameter === 37445) { // UNMASKED_VENDOR_WEBGL
+                    return 'Intel Inc.';
+                }
+                if (parameter === 37446) { // UNMASKED_RENDERER_WEBGL
+                    return 'Intel Iris OpenGL Engine';
+                }
+                return getParameter.call(this, parameter);
+            };
+            
+            // Canvas fingerprinting protection
+            const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+            HTMLCanvasElement.prototype.toDataURL = function() {
+                const context = this.getContext('2d');
+                if (context) {
+                    // Noise hinzufügen um Canvas-Fingerprinting zu verhindern
+                    const imageData = context.getImageData(0, 0, this.width, this.height);
+                    for (let i = 0; i < imageData.data.length; i += 4) {
+                        imageData.data[i] = imageData.data[i] + Math.floor(Math.random() * 2);
+                    }
+                    context.putImageData(imageData, 0, 0);
+                }
+                return originalToDataURL.apply(this, arguments);
+            };
+            
+            // AudioContext fingerprinting protection
+            if (window.AudioContext || window.webkitAudioContext) {
+                const AudioContextProto = (window.AudioContext || window.webkitAudioContext).prototype;
+                const originalCreateAnalyser = AudioContextProto.createAnalyser;
+                AudioContextProto.createAnalyser = function() {
+                    const analyser = originalCreateAnalyser.call(this);
+                    const originalGetFloatFrequencyData = analyser.getFloatFrequencyData;
+                    analyser.getFloatFrequencyData = function(array) {
+                        originalGetFloatFrequencyData.call(this, array);
+                        // Noise hinzufügen
+                        for (let i = 0; i < array.length; i++) {
+                            array[i] = array[i] + Math.random() * 0.0001;
+                        }
+                    };
+                    return analyser;
+                };
+            }
+            
+            // Battery API blockieren
+            if ('getBattery' in navigator) {
+                navigator.getBattery = undefined;
+            }
+            
+            // GamePad API blockieren
+            if ('getGamepads' in navigator) {
+                navigator.getGamepads = function() { return []; };
+            }
+            
+            // Media Devices API blockieren
+            if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+                navigator.mediaDevices.enumerateDevices = function() {
+                    return Promise.resolve([]);
+                };
+            }
+            
+            console.log('SurfWolf74: Browser-Fingerprinting-Schutz aktiviert');
+        })();
+"""
+
+
+def sync_anti_fingerprint_script(profile, enabled):
+    """Registriert das Anti-Fingerprinting-Skript am Profil (nur Strict-Modus).
+    Als Profil-Skript greift es bei JEDER Navigation vor dem Seiten-JS –
+    ein einmaliges runJavaScript() beim Tab-Erzeugen ging nach dem ersten
+    Seitenwechsel verloren und initialisierte zudem die Page vorzeitig
+    (was target=_blank-Links über createWindow() scheitern ließ)."""
+    scripts = profile.scripts()
+    for old in scripts.find(ANTI_FINGERPRINT_SCRIPT_NAME):
+        scripts.remove(old)
+    if not enabled:
+        return
+    script = QWebEngineScript()
+    script.setName(ANTI_FINGERPRINT_SCRIPT_NAME)
+    script.setSourceCode(ANTI_FINGERPRINT_JS)
+    script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
+    script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
     script.setRunsOnSubFrames(True)
     scripts.insert(script)
 
@@ -389,15 +510,14 @@ class CustomWebEnginePage(QWebEnginePage):
             self.browser_window.statusBar().clearMessage()
 
     def createWindow(self, window_type):
-        # Nur neue Tabs erstellen wenn bereits ein Tab existiert (Browser gestartet)
+        """Ziel für target=_blank-Links, window.open() und Popups: immer ein
+        neuer Tab (Fenster/Dialoge gibt es in SurfWolf74 nicht). Die Page
+        des neuen Tabs darf noch nichts geladen haben, sonst verwirft
+        Chromium die Anfrage stillschweigend – der Klick tut dann nichts."""
         if self.browser_window.tabs.count() > 0:
-            if window_type == QWebEnginePage.WebWindowType.WebBrowserTab:
-                new_tab = self.browser_window.add_new_tab()
-                return new_tab.page()
-            elif window_type == QWebEnginePage.WebWindowType.WebBrowserWindow:
-                new_tab = self.browser_window.add_new_tab()  
-                return new_tab.page()
-        # Während der Initialisierung oder wenn keine Tabs vorhanden: Standard-Verhalten
+            new_tab = self.browser_window.add_new_tab(load=False)
+            return new_tab.page()
+        # Während der Initialisierung: Standard-Verhalten (kein Fenster)
         return super().createWindow(window_type)
 
     def acceptNavigationRequest(self, url, navigation_type, is_main_frame):
@@ -446,8 +566,13 @@ class BrowserTab(QWebEngineView):
         self.browser_window = browser_window
         self.profile = profile
 
-        # Page ZUERST erstellen
-        page = CustomWebEnginePage(self.profile, browser_window)
+        # Page ZUERST erstellen. Die Python-Referenz MUSS am Tab gehalten
+        # werden: Fällt das Python-Objekt weg, verliert die C++-Page alle
+        # hier überschriebenen Methoden (createWindow, acceptNavigationRequest)
+        # und verhält sich wie eine nackte QWebEnginePage – target=_blank-
+        # Links und die Website-Sperre funktionieren dann still nicht mehr.
+        self._page = CustomWebEnginePage(self.profile, browser_window)
+        page = self._page
         self.setPage(page)
 
         # Settings über die Page, nicht das Profil
@@ -520,117 +645,10 @@ class BrowserTab(QWebEngineView):
         # Focus auf Navigation aktivieren
         settings.setAttribute(QWebEngineSettings.WebAttribute.FocusOnNavigationEnabled, True)
         
-        # KEINE CSS-Injection mehr - nur Browser-interne Accessibility-Features
-        
-        # Anti-Fingerprinting-Script im Strict-Modus injizieren
-        if self.browser_window.security_mode == "strict":
-            self.inject_anti_fingerprinting_script()
+        # Bewusst KEIN setUrl()/runJavaScript() hier: Die Page muss
+        # uninitialisiert bleiben, damit createWindow() sie als Ziel für
+        # target=_blank-Links zurückgeben kann. Laden übernimmt add_new_tab().
 
-        # Direkt DuckDuckGo laden statt Startseite
-        self.setUrl(QUrl("https://duckduckgo.com"))
-
-    def inject_anti_fingerprinting_script(self):
-        """Injiziert JavaScript um Browser-Fingerprinting zu verhindern"""
-        anti_fingerprint_script = """
-        (function() {
-            console.log('SurfWolf74: Anti-Fingerprinting Script aktiviert');
-            
-            // Screen Resolution spoofing
-            Object.defineProperty(screen, 'width', { value: 1920, writable: false });
-            Object.defineProperty(screen, 'height', { value: 1080, writable: false });
-            Object.defineProperty(screen, 'availWidth', { value: 1920, writable: false });
-            Object.defineProperty(screen, 'availHeight', { value: 1040, writable: false });
-            Object.defineProperty(screen, 'colorDepth', { value: 24, writable: false });
-            Object.defineProperty(screen, 'pixelDepth', { value: 24, writable: false });
-            
-            // Timezone spoofing
-            Date.prototype.getTimezoneOffset = function() { return 0; };
-            
-            // Language spoofing
-            Object.defineProperty(navigator, 'language', { value: 'en-US', writable: false });
-            Object.defineProperty(navigator, 'languages', { value: ['en-US', 'en'], writable: false });
-            
-            // Platform spoofing
-            Object.defineProperty(navigator, 'platform', { value: 'Win32', writable: false });
-            
-            // Hardware concurrency spoofing
-            Object.defineProperty(navigator, 'hardwareConcurrency', { value: 4, writable: false });
-            
-            // Device memory spoofing
-            if ('deviceMemory' in navigator) {
-                Object.defineProperty(navigator, 'deviceMemory', { value: 8, writable: false });
-            }
-            
-            // WebGL fingerprinting protection
-            const getParameter = WebGLRenderingContext.prototype.getParameter;
-            WebGLRenderingContext.prototype.getParameter = function(parameter) {
-                if (parameter === 37445) { // UNMASKED_VENDOR_WEBGL
-                    return 'Intel Inc.';
-                }
-                if (parameter === 37446) { // UNMASKED_RENDERER_WEBGL
-                    return 'Intel Iris OpenGL Engine';
-                }
-                return getParameter.call(this, parameter);
-            };
-            
-            // Canvas fingerprinting protection
-            const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
-            HTMLCanvasElement.prototype.toDataURL = function() {
-                const context = this.getContext('2d');
-                if (context) {
-                    // Noise hinzufügen um Canvas-Fingerprinting zu verhindern
-                    const imageData = context.getImageData(0, 0, this.width, this.height);
-                    for (let i = 0; i < imageData.data.length; i += 4) {
-                        imageData.data[i] = imageData.data[i] + Math.floor(Math.random() * 2);
-                    }
-                    context.putImageData(imageData, 0, 0);
-                }
-                return originalToDataURL.apply(this, arguments);
-            };
-            
-            // AudioContext fingerprinting protection
-            if (window.AudioContext || window.webkitAudioContext) {
-                const AudioContextProto = (window.AudioContext || window.webkitAudioContext).prototype;
-                const originalCreateAnalyser = AudioContextProto.createAnalyser;
-                AudioContextProto.createAnalyser = function() {
-                    const analyser = originalCreateAnalyser.call(this);
-                    const originalGetFloatFrequencyData = analyser.getFloatFrequencyData;
-                    analyser.getFloatFrequencyData = function(array) {
-                        originalGetFloatFrequencyData.call(this, array);
-                        // Noise hinzufügen
-                        for (let i = 0; i < array.length; i++) {
-                            array[i] = array[i] + Math.random() * 0.0001;
-                        }
-                    };
-                    return analyser;
-                };
-            }
-            
-            // Battery API blockieren
-            if ('getBattery' in navigator) {
-                navigator.getBattery = undefined;
-            }
-            
-            // GamePad API blockieren
-            if ('getGamepads' in navigator) {
-                navigator.getGamepads = function() { return []; };
-            }
-            
-            // Media Devices API blockieren
-            if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-                navigator.mediaDevices.enumerateDevices = function() {
-                    return Promise.resolve([]);
-                };
-            }
-            
-            console.log('SurfWolf74: Browser-Fingerprinting-Schutz aktiviert');
-        })();
-        """
-        
-        def anti_fingerprint_injected(result):
-            print(f"Anti-Fingerprinting Script injiziert: {result}")
-            
-        self.page().runJavaScript(anti_fingerprint_script, anti_fingerprint_injected)
 
     def contextMenuEvent(self, event):
         """Custom Context Menu mit funktionierenden Actions"""
@@ -1390,6 +1408,7 @@ class BrowserWindow(QMainWindow):
         profile.setHttpUserAgent(get_user_agent())
         # Inversions-Skript passend zum gespeicherten Zustand registrieren
         sync_invert_script(profile, self.website_colors_inverted)
+        sync_anti_fingerprint_script(profile, mode == "strict")
         return profile
 
     def load_config(self):
@@ -2077,6 +2096,8 @@ class BrowserWindow(QMainWindow):
             self.url_bar.setText("https://duckduckgo.com")
 
     def update_url_bar(self):
+        if not self._tabs_alive():
+            return
         tab = self.tabs.currentWidget()
         if tab:
             url_string = tab.url().toString()
@@ -2086,15 +2107,14 @@ class BrowserWindow(QMainWindow):
             else:
                 self.url_bar.setText(url_string)
 
-    def add_new_tab(self, url=None):
+    def add_new_tab(self, url=None, load=True):
+        """Neuen Tab anlegen. load=False lässt die Page unberührt – nötig für
+        createWindow(), das Chromium ein noch leeres Ziel liefern muss."""
         tab = BrowserTab(self.tabs, self, self.profile, self.js_enabled)
-        if url:
-            tab.setUrl(QUrl(url))
-        else:
-            # Standardmäßig DuckDuckGo laden
-            tab.setUrl(QUrl("https://duckduckgo.com"))
+        if load:
+            tab.setUrl(QUrl(url) if url else QUrl("https://duckduckgo.com"))
         # Tab-Titel dynamisch setzen
-        title = "DuckDuckGo" if not url else "Neuer Tab"
+        title = "DuckDuckGo" if (load and not url) else "Neuer Tab"
         index = self.tabs.addTab(tab, title)
         self.tabs.setCurrentIndex(index)
         # Event-Handler
@@ -2117,13 +2137,19 @@ class BrowserWindow(QMainWindow):
         else:
             self.statusBar().clearMessage()
 
+    def _tabs_alive(self):
+        """False, sobald das Tab-Widget beim Beenden bereits zerstört wird.
+        Pages senden titleChanged/loadFinished noch während des Abbaus; ein
+        Zugriff auf self.tabs wäre dann eine Exception im Slot (= Absturz)."""
+        return not sip.isdeleted(self.tabs)
+
     def update_tab_title(self, index, title):
-        if index < self.tabs.count() and title:
+        if self._tabs_alive() and index < self.tabs.count() and title:
             short_title = title[:25] + "..." if len(title) > 25 else title
             self.tabs.setTabText(index, short_title)
 
     def on_load_finished(self, index, success):
-        if index < self.tabs.count():
+        if self._tabs_alive() and index < self.tabs.count():
             tab = self.tabs.widget(index)
             if tab:
                 title = tab.title() or tab.url().toString()
@@ -2137,6 +2163,14 @@ class BrowserWindow(QMainWindow):
     def closeEvent(self, event):
         """Speichert alle Einstellungen beim Schließen des Browsers"""
         self.save_config()
+        # Tabs (View + Page) sofort zerstören, BEVOR das Profil fällt: Das
+        # Strict-Profil ist Kind dieses Fensters und würde sonst vor den
+        # Pages abgebaut ("Release of profile requested but WebEnginePage
+        # still not deleted"). deleteLater() käme dafür zu spät.
+        while self.tabs.count():
+            tab = self.tabs.widget(0)
+            self.tabs.removeTab(0)
+            sip.delete(tab)
         event.accept()
 
 # -------- main --------
