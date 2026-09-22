@@ -5,6 +5,7 @@ import sys
 import os
 import re
 import json
+import shutil
 import tempfile
 import webbrowser
 from PyQt6.QtCore import Qt, QUrl, QPoint, QStringListModel, QSize, QObject, QTimer, QMimeData, QByteArray
@@ -38,9 +39,60 @@ APP_VERSION = "5.3"
 APP_PATH = get_base_path()
 ICON_PATH = os.path.join(APP_PATH, "icon.ico")
 START_IMAGE_PATH = os.path.join(APP_PATH, "surfwolf74.png")
-BOOKMARKS_FILE = os.path.join(APP_PATH, "bookmarks.json")
-CONFIG_FILE = os.path.join(APP_PATH, "config.json")
-BLOCKED_SITES_FILE = os.path.join(APP_PATH, "blocked_sites.json")
+
+# Nutzerdaten (Lesezeichen, Konfiguration, Sperrliste). Diese Dateien werden
+# zur Laufzeit geschrieben – neben der EXE geht das nur, wenn der Ordner
+# beschreibbar ist (Quellcode-Start, portable Kopie). Unter "C:\Program
+# Files" (Installer) fehlen die Schreibrechte, deshalb dort ein Ordner im
+# Nutzerprofil. Mitgelieferte Startdateien werden beim ersten Start kopiert.
+USER_DATA_FILES = ("bookmarks.json", "config.json", "blocked_sites.json")
+
+
+def _is_writable_dir(path):
+    """Echter Schreibtest statt os.access(): Windows-ACLs und UAC-
+    Virtualisierung machen os.access unzuverlässig."""
+    try:
+        probe = os.path.join(path, f".surfwolf-write-test-{os.getpid()}")
+        with open(probe, "w") as f:
+            f.write("ok")
+        os.remove(probe)
+        return True
+    except OSError:
+        return False
+
+
+def get_data_path():
+    r"""Ordner für Nutzerdaten: der Programmordner, wenn er beschreibbar ist,
+    sonst ein Ordner im Nutzerprofil (%APPDATA%\SurfWolf74 bzw.
+    ~/.config/surfwolf74). Fehlt dort eine Datei, wird die mitgelieferte
+    Vorlage aus dem Programmordner übernommen (einmalige Migration)."""
+    if _is_writable_dir(APP_PATH):
+        return APP_PATH
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        data_path = os.path.join(base, "SurfWolf74")
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+        data_path = os.path.join(base, "surfwolf74")
+    try:
+        os.makedirs(data_path, exist_ok=True)
+        for name in USER_DATA_FILES:
+            src = os.path.join(APP_PATH, name)
+            dst = os.path.join(data_path, name)
+            if os.path.isfile(src) and not os.path.exists(dst):
+                shutil.copyfile(src, dst)
+    except OSError as e:
+        # Letzter Rückfall: Programmordner – Speichern schlägt dann mit
+        # verständlicher Meldung fehl, statt dass die App gar nicht startet.
+        print(f"Datenordner {data_path} nicht nutzbar ({e}) – nutze {APP_PATH}")
+        return APP_PATH
+    return data_path
+
+
+DATA_PATH = get_data_path()
+BOOKMARKS_FILE = os.path.join(DATA_PATH, "bookmarks.json")
+CONFIG_FILE = os.path.join(DATA_PATH, "config.json")
+BLOCKED_SITES_FILE = os.path.join(DATA_PATH, "blocked_sites.json")
 
 
 # -------- Grafik-Backend (gegen Flackern) --------
@@ -1002,7 +1054,13 @@ class BrowserWindow(QMainWindow):
             self.load_bookmarks()
             QMessageBox.information(self, "Erfolg", f"Lesezeichen '{name}' wurde hinzugefügt.")
         except Exception as e:
-            QMessageBox.warning(self, "Fehler", f"Fehler beim Speichern: {e}")
+            QMessageBox.warning(
+                self, "Fehler",
+                f"Lesezeichen konnten nicht gespeichert werden:\n{e}\n\n"
+                f"Speicherort: {BOOKMARKS_FILE}\n"
+                "Bitte prüfen, ob der Ordner beschreibbar ist, oder die App "
+                "neu starten – sie wählt dann automatisch einen beschreibbaren "
+                "Ordner im Nutzerprofil.")
 
     def rename_bookmark(self, bookmark_name):
         new_name, ok = QInputDialog.getText(self, "Lesezeichen umbenennen", f"Neuer Name für Lesezeichen '{bookmark_name}':")

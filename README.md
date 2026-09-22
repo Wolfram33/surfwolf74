@@ -75,6 +75,16 @@ QtWebEngine spielt MP4/H.264-Videos nur mit proprietären Codecs ab.
 - **Linux (Debian/Ubuntu, System-Paket):** `python3-pyqt6.qtwebengine` ist
   **mit** H.264/AAC gebaut – dort spielt auch x.com direkt im Browser.
 
+## Speicherort der Nutzerdaten
+
+Lesezeichen (`bookmarks.json`), Einstellungen (`config.json`) und die
+Sperrliste (`blocked_sites.json`) liegen im Programmordner, solange dieser
+beschreibbar ist (Start aus dem Quellcode, portable Kopie). Bei einer
+Installation unter `C:\Program Files` fehlen dort die Schreibrechte; dann
+nutzt SurfWolf74 automatisch `%APPDATA%\SurfWolf74` (Linux:
+`~/.config/surfwolf74`) und kopiert die mitgelieferten Startdateien beim
+ersten Start dorthin. Diese Dateien überstehen ein Update des Installers.
+
 ## Flackern bei Live-Seiten (Grafik-Backend)
 
 Seiten, die sich per Polling ständig aktualisieren (Dashboards, Live-Ticker,
