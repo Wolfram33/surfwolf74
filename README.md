@@ -75,6 +75,26 @@ QtWebEngine spielt MP4/H.264-Videos nur mit proprietären Codecs ab.
 - **Linux (Debian/Ubuntu, System-Paket):** `python3-pyqt6.qtwebengine` ist
   **mit** H.264/AAC gebaut – dort spielt auch x.com direkt im Browser.
 
+## Schutz vor gefälschten Adressen (Homograph-Angriffe)
+
+Betrüger registrieren Adressen, die bekannten Seiten mit Zeichen fremder
+Schriften nachgebaut sind, z. B. `amαzon.com` mit griechischem Alpha oder
+`аррӏе.com` komplett in Kyrillisch. SurfWolf74 erkennt solche Namen und
+
+- zeigt sie in Adress- und Statusleiste als **Punycode** (`xn--…`), also so,
+  wie der Server wirklich heißt,
+- blendet neben der Adressleiste den Knopf **„⚠ Gefälschte Adresse?"** mit
+  Erklärung ein,
+- fragt nach, bevor eine eingetippte oder eingefügte verdächtige Adresse
+  geöffnet wird,
+- blendet Benutzernamen vor der Adresse aus (`https://bank.de@betrug.example/`)
+  und warnt davor.
+
+Normale internationale Namen wie `müller.de`, `пример.рф` oder `日本語.jp`
+bleiben lesbar. Geprüft wird: Schriftmischung in einem Namensteil, rein
+kyrillische/griechische Nachbauten lateinischer Wörter und täuschende
+Sonderzeichen (z. B. punktloses `ı`). Tests: `inaktiv/tests/test_homograph.py`.
+
 ## Speicherort der Nutzerdaten
 
 Lesezeichen (`bookmarks.json`), Einstellungen (`config.json`) und die

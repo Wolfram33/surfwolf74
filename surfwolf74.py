@@ -7,6 +7,7 @@ import re
 import json
 import shutil
 import tempfile
+import unicodedata
 import webbrowser
 from PyQt6.QtCore import Qt, QUrl, QPoint, QStringListModel, QSize, QObject, QTimer, QMimeData, QByteArray
 from PyQt6.QtGui import QIcon, QFont, QAction, QDrag
@@ -94,6 +95,140 @@ DATA_PATH = get_data_path()
 BOOKMARKS_FILE = os.path.join(DATA_PATH, "bookmarks.json")
 CONFIG_FILE = os.path.join(DATA_PATH, "config.json")
 BLOCKED_SITES_FILE = os.path.join(DATA_PATH, "blocked_sites.json")
+
+
+# -------- Homograph-Schutz (vorgetäuschte Adressen) --------
+# Angreifer registrieren Domains, die mit Zeichen fremder Schriften echte
+# Namen nachahmen: "amαzon.com" (griechisches Alpha) oder "аррӏе.com"
+# (komplett kyrillisch). Qt zeigt solche Namen in der Adressleiste als
+# Unicode an. Wie Chromium/Firefox zeigen wir verdächtige Namen deshalb als
+# Punycode (xn--…) und warnen sichtbar.
+
+# Kyrillische/griechische Buchstaben, die lateinischen zum Verwechseln
+# gleichen (Kyrillisch nach Chromiums Liste). Besteht ein Label nur daraus,
+# ist es eine Ganz-Schrift-Fälschung – auch ohne Schriftmischung.
+LATIN_LOOKALIKES = frozenset(
+    "аысԁеԍһіюјӏорԗԛѕԝхуъьҽпгѵѡ"   # Kyrillisch
+    "αοικνρτυχϲεηωγ"                # Griechisch
+)
+
+# Lateinische Sonderformen, die wie normale ASCII-Buchstaben aussehen
+# (punktloses i, Schreibschrift-g, Kapitälchen …).
+DECEPTIVE_LATIN = frozenset("ɑɡıȷĸſǀǁǂǃɩʟɴʀʏᴀᴄᴅᴇᴊᴋᴍᴏᴘᴛᴜᴠᴡᴢꞁ")
+
+# Japanische Wiederholungs-/Dehnungszeichen sind legitime Modifikatoren.
+JAPANESE_MARKS = frozenset("ー々ゝゞヽヾ")
+
+# Schriftkombinationen, die in echten Domainnamen üblich sind (CJK-Sprachen).
+ALLOWED_SCRIPT_MIXES = (
+    frozenset({"LATIN", "HAN", "HIRAGANA", "KATAKANA"}),
+    frozenset({"LATIN", "HAN", "HANGUL"}),
+    frozenset({"LATIN", "HAN", "BOPOMOFO"}),
+)
+
+# Abweichende Präfixe in Unicode-Zeichennamen auf ihre Schrift abbilden.
+_SCRIPT_ALIASES = {
+    "CJK": "HAN", "IDEOGRAPHIC": "HAN",
+    "KATAKANA-HIRAGANA": "KATAKANA",
+    "ARABIC-INDIC": "ARABIC", "EXTENDED": "ARABIC",
+}
+
+SCRIPT_NAMES_DE = {
+    "LATIN": "Lateinisch", "CYRILLIC": "Kyrillisch", "GREEK": "Griechisch",
+    "ARMENIAN": "Armenisch", "HEBREW": "Hebräisch", "ARABIC": "Arabisch",
+    "HAN": "Chinesisch/Kanji", "HIRAGANA": "Hiragana", "KATAKANA": "Katakana",
+    "HANGUL": "Koreanisch", "CHEROKEE": "Cherokee", "GEORGIAN": "Georgisch",
+}
+
+
+def _char_script(ch):
+    """Schrift eines Zeichens; None für schriftneutrale Zeichen (Ziffern,
+    Bindestrich, kombinierende Akzente, die zum Vorgänger gehören)."""
+    if ch.isascii():
+        return "LATIN" if ch.isalpha() else None
+    if unicodedata.category(ch) in ("Mn", "Mc", "Nd"):
+        return None
+    prefix = unicodedata.name(ch, "UNKNOWN").split(" ", 1)[0]
+    return _SCRIPT_ALIASES.get(prefix, prefix)
+
+
+def _label_scripts(label):
+    return {sc for sc in map(_char_script, label) if sc}
+
+
+def _label_reason(label, tld_scripts):
+    """Grund, warum ein einzelnes Namens-Label täuschen könnte, sonst None."""
+    for ch in label:
+        if ch in DECEPTIVE_LATIN:
+            return (f"enthält das Zeichen „{ch}“ ({unicodedata.name(ch, '?')}), "
+                    "das einem normalen Buchstaben gleicht")
+        category = unicodedata.category(ch)
+        if category == "Lm" and ch not in JAPANESE_MARKS:
+            return f"enthält das unübliche Zeichen „{ch}“ ({unicodedata.name(ch, '?')})"
+        if category[0] not in "LMN" and ch != "-":
+            return "enthält Sonder- oder unsichtbare Steuerzeichen"
+
+    scripts = _label_scripts(label)
+    if len(scripts) > 1 and not any(scripts <= mix for mix in ALLOWED_SCRIPT_MIXES):
+        names = ", ".join(SCRIPT_NAMES_DE.get(sc, sc.title()) for sc in sorted(scripts))
+        return f"mischt mehrere Schriften ({names})"
+
+    # Ganz-Schrift-Fälschung: nur Kyrillisch/Griechisch, aber jeder Buchstabe
+    # sieht lateinisch aus. Unter einer gleichschriftigen Endung (z. B. .рф)
+    # ist das ein normaler Name und wird nicht beanstandet.
+    if scripts in ({"CYRILLIC"}, {"GREEK"}) and not (scripts & tld_scripts):
+        letters = [ch for ch in label if ch.isalpha()]
+        if letters and all(ch in LATIN_LOOKALIKES for ch in letters):
+            script = SCRIPT_NAMES_DE[next(iter(scripts))].lower()
+            return (f"besteht nur aus {script}en Zeichen, die lateinischen "
+                    "Buchstaben zum Verwechseln ähnlich sehen")
+    return None
+
+
+def homograph_reason(host):
+    """Prüft einen Hostnamen (Unicode-Form) auf Täuschungsmerkmale.
+    Gibt einen verständlichen Grund zurück oder None, wenn er unbedenklich
+    ist. Reine ASCII-Namen (auch xn--…) sind nie verdächtig: Was als
+    Punycode angezeigt wird, kann nicht mehr täuschen."""
+    if not host or host.isascii():
+        return None
+    labels = [lbl for lbl in host.lower().rstrip(".").split(".") if lbl]
+    if not labels:
+        return None
+    tld_scripts = _label_scripts(labels[-1])
+    for label in labels:
+        if label.isascii():
+            continue
+        reason = _label_reason(label, tld_scripts)
+        if reason:
+            return reason
+    return None
+
+
+def url_display_info(qurl):
+    """Liefert (Anzeigetext, Warngrund oder None) für Adress- und Statusleiste.
+    Verdächtige Hosts erscheinen als Punycode. Anmeldedaten vor dem Host
+    (https://bank.de@betrug.example/) werden nie angezeigt, aber gemeldet,
+    weil sie den echten Server hinter einem bekannten Namen verstecken."""
+    if not qurl.isValid():
+        return qurl.toString(), None
+    reason = homograph_reason(qurl.host())
+    if reason:
+        reason = f"Der Name {reason}."
+    elif qurl.userInfo():
+        reason = ("Vor der eigentlichen Adresse steht ein Benutzername. Der echte "
+                  "Server ist der Teil nach dem @-Zeichen.")
+    if reason:
+        options = (QUrl.UrlFormattingOption.RemoveUserInfo
+                   | QUrl.ComponentFormattingOption.FullyEncoded)
+    else:
+        options = QUrl.UrlFormattingOption.RemoveUserInfo
+    return qurl.toString(options), reason
+
+
+def url_real_host(qurl):
+    """Echter Server-Name in Punycode – das, was das DNS tatsächlich auflöst."""
+    return qurl.host(QUrl.ComponentFormattingOption.FullyEncoded)
 
 
 # -------- Grafik-Backend (gegen Flackern) --------
@@ -499,15 +634,7 @@ class CustomWebEnginePage(QWebEnginePage):
     def __init__(self, profile, browser_window):
         super().__init__(profile)
         self.browser_window = browser_window
-        # Link-Hover-Event richtig verbinden
-        self.linkHovered.connect(self.on_link_hovered)
-
-    def on_link_hovered(self, url):
-        """Zeigt Link-URL in der Statusleiste beim Hover"""
-        if url:
-            self.browser_window.statusBar().showMessage(f"🔗 {url}", 0)
-        else:
-            self.browser_window.statusBar().clearMessage()
+        # Link-Hover verbindet add_new_tab() mit BrowserWindow.on_link_hovered
 
     def createWindow(self, window_type):
         """Ziel für target=_blank-Links, window.open() und Popups: immer ein
@@ -790,7 +917,9 @@ class DraggableBookmarkButton(QToolButton):
         self.browser_window = browser_window
         self.original_text = name
         self.setText(name)
-        self.setToolTip(url)
+        # Tooltip mit Homograph-Prüfung: verdächtige Ziele als Punycode
+        shown_url, reason = url_display_info(QUrl(url))
+        self.setToolTip(f"⚠ Mögliche gefälschte Adresse: {shown_url}" if reason else shown_url)
         self.setProperty("bookmark_name", name)
         self.setAcceptDrops(True)
         self.is_dragging = False
@@ -1039,7 +1168,9 @@ class BrowserWindow(QMainWindow):
             return
         url = current_tab.url().toString()
         title = current_tab.page().title() or "Neue Seite"
-        name, ok = QInputDialog.getText(self, "Lesezeichen hinzufügen", f"Name für das Lesezeichen:\n\nURL: {url}", QLineEdit.EchoMode.Normal, title)
+        shown_url, reason = url_display_info(current_tab.url())
+        warning = f"\n\n⚠ Vorsicht: {reason}" if reason else ""
+        name, ok = QInputDialog.getText(self, "Lesezeichen hinzufügen", f"Name für das Lesezeichen:\n\nURL: {shown_url}{warning}", QLineEdit.EchoMode.Normal, title)
         if ok and name:
             self._add_bookmark_to(name, url)
 
@@ -1705,6 +1836,20 @@ class BrowserWindow(QMainWindow):
         self.url_bar.returnPressed.connect(self.navigate_to_url)
         nav_layout.addWidget(self.url_bar, stretch=1)
 
+        # Homograph-Warnung: erscheint nur bei verdächtiger Adresse. Text +
+        # Symbol statt nur Farbe; Klick/Enter öffnet die Erklärung. Feste
+        # Farben (Vorder- UND Hintergrund) – in beiden Themes lesbar.
+        self.url_warning_btn = QPushButton("⚠ Gefälschte Adresse?")
+        self.url_warning_btn.setAccessibleName("Warnung: Adresse dieser Seite könnte gefälscht sein")
+        self.url_warning_btn.setStyleSheet(
+            "QPushButton { background-color: #ffd8a8; color: #3d2400; font-weight: bold;"
+            " border: 2px solid #c46a00; border-radius: 6px; padding: 4px 10px; }"
+            "QPushButton:hover, QPushButton:focus { background-color: #ffc078; color: #2b1900; }")
+        self.url_warning_btn.clicked.connect(self.show_url_warning_details)
+        self.url_warning_btn.setVisible(False)
+        self._url_warning = None  # (echter Host, Grund) der aktuellen Seite
+        nav_layout.addWidget(self.url_warning_btn)
+
         # Extern öffnen Button (vergrößert und besser sichtbar, erweitert nach links)
         external_btn = QPushButton("🌐 Extern")
         external_btn.setMinimumSize(80, 30)
@@ -2069,6 +2214,23 @@ class BrowserWindow(QMainWindow):
         else:
             url = QUrl(text)
         
+        # HOMOGRAPH-SCHUTZ: eingetippte/eingefügte Adressen vor dem Laden prüfen
+        _, reason = url_display_info(url)
+        if reason:
+            answer = QMessageBox.warning(
+                self, "Adresse könnte gefälscht sein",
+                f"{reason}\n\n"
+                f"Echter Server (Punycode): {url_real_host(url)}\n\n"
+                "Die Adresse sieht womöglich wie eine bekannte Seite aus, führt aber "
+                "woanders hin. Stammt sie aus einer E-Mail oder Nachricht, besser "
+                "nicht öffnen und die Seite selbst eintippen.\n\n"
+                "Trotzdem öffnen?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                self.statusBar().showMessage("Aufruf abgebrochen: Adresse könnte gefälscht sein", 5000)
+                return
+
         # WEBSITE-SPERRUNG: Prüfung BEVOR Navigation startet
         if url.host() and is_site_blocked(url.host()):
             host = url.host().lower()
@@ -2099,13 +2261,45 @@ class BrowserWindow(QMainWindow):
         if not self._tabs_alive():
             return
         tab = self.tabs.currentWidget()
-        if tab:
-            url_string = tab.url().toString()
-            # Leere URL-Leiste für die Startseite (Base64-URLs ausblenden)
-            if url_string.startswith("data:") or not url_string or url_string == "about:blank":
-                self.url_bar.setText("")
-            else:
-                self.url_bar.setText(url_string)
+        if not tab:
+            self._set_url_warning(None, None)
+            return
+        url = tab.url()
+        url_string = url.toString()
+        # Leere URL-Leiste für die Startseite (Base64-URLs ausblenden)
+        if url_string.startswith("data:") or not url_string or url_string == "about:blank":
+            self.url_bar.setText("")
+            self._set_url_warning(None, None)
+            return
+        text, reason = url_display_info(url)
+        self.url_bar.setText(text)
+        self._set_url_warning(url, reason)
+
+    def _set_url_warning(self, url, reason):
+        """Blendet die Homograph-Warnung neben der Adressleiste ein oder aus."""
+        if not reason:
+            self._url_warning = None
+            self.url_warning_btn.setVisible(False)
+            return
+        self._url_warning = (url_real_host(url), reason)
+        self.url_warning_btn.setToolTip(f"{reason}\nEchter Server: {url_real_host(url)}\nKlicken für Details.")
+        self.url_warning_btn.setVisible(True)
+        self.statusBar().showMessage(f"⚠ Diese Adresse könnte gefälscht sein: {reason}", 10000)
+
+    def show_url_warning_details(self):
+        """Erklärt die Homograph-Warnung in Klartext (Ursache + nächster Schritt)."""
+        if not self._url_warning:
+            return
+        real_host, reason = self._url_warning
+        QMessageBox.warning(
+            self, "Adresse könnte gefälscht sein",
+            f"{reason}\n\n"
+            f"Echter Server (Punycode): {real_host}\n\n"
+            "Solche Adressen sehen bekannten Seiten zum Verwechseln ähnlich, "
+            "gehören aber jemand anderem (Homograph-Angriff).\n\n"
+            "Was tun: Hier keine Passwörter, Codes oder Zahlungsdaten eingeben. "
+            "Die gewünschte Seite lieber über ein Lesezeichen öffnen oder die "
+            "Adresse selbst eintippen.")
 
     def add_new_tab(self, url=None, load=True):
         """Neuen Tab anlegen. load=False lässt die Page unberührt – nötig für
@@ -2122,7 +2316,7 @@ class BrowserWindow(QMainWindow):
         tab.urlChanged.connect(self.update_url_bar)
         tab.loadStarted.connect(lambda idx=index: self.tabs.setTabText(idx, "Lade..."))
         tab.loadFinished.connect(lambda ok, idx=index: self.on_load_finished(idx, ok))
-        # Link-Hover auch für den Tab selbst aktivieren (falls Page-Signal nicht funktioniert)
+        # Link-Ziel beim Überfahren in der Statusleiste zeigen (mit Homograph-Prüfung)
         tab.page().linkHovered.connect(self.on_link_hovered)
         
         # Farb-Inversion: erledigt das am Profil registrierte Skript beim Laden
@@ -2131,11 +2325,15 @@ class BrowserWindow(QMainWindow):
 
 
     def on_link_hovered(self, url):
-        """Zeigt Link-URL in der Statusleiste beim Hover"""
-        if url:
-            self.statusBar().showMessage(f"🔗 {url}", 0)
-        else:
+        """Zeigt das Link-Ziel in der Statusleiste – verdächtige Adressen als
+        Punycode und mit Warnhinweis, damit der Nutzer VOR dem Klick sieht,
+        wohin der Link wirklich führt."""
+        if not url:
             self.statusBar().clearMessage()
+            return
+        text, reason = url_display_info(QUrl(url))
+        prefix = "⚠ VORSICHT, mögliche gefälschte Adresse: " if reason else "🔗 "
+        self.statusBar().showMessage(f"{prefix}{text}", 0)
 
     def _tabs_alive(self):
         """False, sobald das Tab-Widget beim Beenden bereits zerstört wird.
