@@ -40,3 +40,6 @@ nuitka/ffmpeg/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Nicht betriebsnotwendiges (Regel 17): bleibt lokal, nicht im Repo
+inaktiv/
