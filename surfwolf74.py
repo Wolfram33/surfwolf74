@@ -37,7 +37,7 @@ def get_base_path():
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
-APP_VERSION = "5.3"
+APP_VERSION = "5.4"
 APP_PATH = get_base_path()
 ICON_PATH = os.path.join(APP_PATH, "icon.ico")
 START_IMAGE_PATH = os.path.join(APP_PATH, "surfwolf74.png")
