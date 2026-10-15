@@ -93,7 +93,7 @@ Schriften nachgebaut sind, z. B. `amαzon.com` mit griechischem Alpha oder
 Normale internationale Namen wie `müller.de`, `пример.рф` oder `日本語.jp`
 bleiben lesbar. Geprüft wird: Schriftmischung in einem Namensteil, rein
 kyrillische/griechische Nachbauten lateinischer Wörter und täuschende
-Sonderzeichen (z. B. punktloses `ı`). Tests: `inaktiv/tests/test_homograph.py`.
+Sonderzeichen (z. B. punktloses `ı`).
 
 ## Speicherort der Nutzerdaten
 
