@@ -30,8 +30,11 @@ jobs:
         with:
           python-version: '3.12'
 
+      # Versionen festgeschrieben = der lokal getestete Stand (.venv). Die
+      # Qt-Binaerpakete (PyQt6-Qt6, PyQt6-WebEngine-Qt6) bleiben bewusst frei:
+      # so kommen Patch-Releases mit Chromium-Sicherheitsfixes automatisch mit.
       - name: Abhaengigkeiten installieren
-        run: python -m pip install --upgrade pip PyQt6 PyQt6-WebEngine nuitka
+        run: python -m pip install --upgrade pip PyQt6==6.12.0 PyQt6-WebEngine==6.140.0 nuitka==4.3.5
 
       - name: Version aus surfwolf74.py lesen
         id: ver

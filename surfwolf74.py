@@ -37,7 +37,7 @@ def get_base_path():
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
-APP_VERSION = "5.4"
+APP_VERSION = "5.5"
 APP_PATH = get_base_path()
 ICON_PATH = os.path.join(APP_PATH, "icon.ico")
 START_IMAGE_PATH = os.path.join(APP_PATH, "surfwolf74.png")
@@ -461,7 +461,7 @@ def sync_anti_fingerprint_script(profile, enabled):
 # Fallback, falls die Engine-Version nicht ausgelesen werden kann.
 _FALLBACK_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+    "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
 )
 _USER_AGENT_CACHE = None
 
