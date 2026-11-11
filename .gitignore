@@ -35,6 +35,8 @@ nuitka/ffmpeg/
 
 # Backup files
 *.py-back
+# Sicherungen unlesbarer Lesezeichen-Dateien (enthalten private Lesezeichen)
+bookmarks.json.defekt*
 
 # OS files
 Thumbs.db

@@ -70,7 +70,8 @@ System-Pakete — kein Nuitka nötig.
   Schritte 3–5 sind Standard-Kiosk-Praxis, aber bitte zuerst in einer VM prüfen.
 
 ## Bekannte Punkte / Härtung (später)
-- Config/Bookmarks liegen relativ zu `surfwolf74.py`; für eine reine Appliance
-  ggf. auf einen beschreibbaren Pfad umlenken (sonst Root-FS beschreibbar halten).
+- Config/Bookmarks liegen neben `surfwolf74.py`, solange dieser Ordner
+  beschreibbar ist. Ist er es nicht (z. B. schreibgeschütztes Root-FS), weicht
+  der Browser von selbst nach `~/.config/surfwolf74` aus.
 - TTY-Wechsel (Strg+Alt+F2) und X-Shortcuts ggf. sperren.
 - WLAN-/GPU-Treiber sind die üblichen Linux-Baustellen (Hardware-abhängig).

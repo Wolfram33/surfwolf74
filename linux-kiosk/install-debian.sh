@@ -16,7 +16,8 @@ $SUDO apt-get install -y --no-install-recommends \
     xserver-xorg \
     xinit \
     x11-xserver-utils \
-    fonts-dejavu-core
+    fonts-dejavu-core \
+    fonts-noto-color-emoji
 
 echo ""
 echo "Fertig. Test in laufender X-Sitzung:  ./kiosk.py"

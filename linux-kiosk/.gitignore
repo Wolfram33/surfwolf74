@@ -1,2 +1,6 @@
 # Gebaute Paket-Artefakte (werden via build.sh erzeugt, nicht versionieren)
 *.deb
+
+# Kopie der Hauptdatei: build.sh erzeugt sie beim Paketbau aus ../surfwolf74.py.
+# Nicht versionieren, sonst laeuft sie gegenueber dem Original auseinander.
+/surfwolf74.py

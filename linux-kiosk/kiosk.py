@@ -5,20 +5,26 @@ Lädt den Browser und ersetzt zur Laufzeit das Maximieren des Fensters durch
 echtes Vollbild (showFullScreen). Die App-Logik bleibt die eine Quelle der
 Wahrheit; die Kiosk-Eigenschaft lebt nur hier.
 
-Quelle: bevorzugt surfwolf74.py im Projekt-Root (kanonisch); faellt auf die
-lokale Kopie in diesem Verzeichnis zurueck, falls linux-kiosk eigenstaendig
-verteilt wird.
+Quelle: bevorzugt surfwolf74.py im Projekt-Root (kanonisch). Wird linux-kiosk
+eigenstaendig verteilt, greift die Kopie in diesem Verzeichnis – sie liegt
+nicht im Repo, sondern wird von debian-package/build.sh hier abgelegt.
 """
 import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+APP_FILE = "surfwolf74.py"
 
-if os.path.exists(os.path.join(ROOT, "surfwolf74.py")):
+if os.path.exists(os.path.join(ROOT, APP_FILE)):
     sys.path.insert(0, ROOT)
-else:
+elif os.path.exists(os.path.join(HERE, APP_FILE)):
     sys.path.insert(0, HERE)
+else:
+    sys.exit(
+        f"Fehler: {APP_FILE} nicht gefunden – weder in {ROOT} noch in {HERE}.\n"
+        f"Bitte {APP_FILE} aus dem SurfWolf74-Projekt neben kiosk.py kopieren "
+        "oder kiosk.py aus dem vollstaendigen Projektordner starten.")
 
 import surfwolf74  # noqa: E402  (Pfad muss vorher gesetzt sein)
 from PyQt6.QtWidgets import QMainWindow  # noqa: E402

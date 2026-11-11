@@ -2,9 +2,9 @@
 # Baut ein natives .deb-Paket fuer SurfWolf74.
 #
 # Kanonische Quelle ist surfwolf74.py im Projekt-Root. Existiert dieser, wird
-# die lokale Kopie in linux-kiosk/ vor dem Build automatisch aktualisiert
-# ("alles zusammen", aber ohne Drift). Fehlt der Root (eigenstaendig verteiltes
-# linux-kiosk), wird die lokale Kopie verwendet.
+# daraus vor dem Build eine Kopie in linux-kiosk/ abgelegt (nicht im Repo,
+# siehe linux-kiosk/.gitignore). Fehlt der Root (eigenstaendig verteiltes
+# linux-kiosk), wird diese zuvor erzeugte Kopie verwendet.
 #
 # Version wird aus APP_VERSION in surfwolf74.py gelesen (eine Quelle der Wahrheit).
 # Ergebnis: linux-kiosk/surfwolf74_<version>_all.deb
@@ -19,8 +19,13 @@ ROOT="$(cd "$HERE/../.." && pwd)"          # Projekt-Root
 if [ -f "$ROOT/surfwolf74.py" ]; then
     APPDIR="$ROOT"
     cp -f "$ROOT/surfwolf74.py" "$OUTDIR/surfwolf74.py"   # Kopie aktuell halten
-else
+elif [ -f "$OUTDIR/surfwolf74.py" ]; then
     APPDIR="$OUTDIR"
+else
+    echo "Fehler: surfwolf74.py nicht gefunden - weder in $ROOT noch in $OUTDIR." >&2
+    echo "Bitte build.sh aus dem vollstaendigen SurfWolf74-Projektordner starten" >&2
+    echo "oder surfwolf74.py nach $OUTDIR kopieren." >&2
+    exit 1
 fi
 
 VERSION="$(grep -oP 'APP_VERSION\s*=\s*"\K[^"]+' "$APPDIR/surfwolf74.py" 2>/dev/null || true)"

@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import unicodedata
 import webbrowser
+from urllib.parse import quote
 from PyQt6.QtCore import Qt, QUrl, QPoint, QStringListModel, QSize, QObject, QTimer, QMimeData, QByteArray
 from PyQt6.QtGui import QIcon, QFont, QAction, QDrag
 from PyQt6.QtWidgets import (
@@ -37,10 +38,9 @@ def get_base_path():
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
-APP_VERSION = "5.5"
+APP_VERSION = "5.6"
 APP_PATH = get_base_path()
 ICON_PATH = os.path.join(APP_PATH, "icon.ico")
-START_IMAGE_PATH = os.path.join(APP_PATH, "surfwolf74.png")
 
 # Nutzerdaten (Lesezeichen, Konfiguration, Sperrliste). Diese Dateien werden
 # zur Laufzeit geschrieben – neben der EXE geht das nur, wenn der Ordner
@@ -342,8 +342,6 @@ ANTI_FINGERPRINT_SCRIPT_NAME = "surfwolf-anti-fingerprint"
 ANTI_FINGERPRINT_JS = """
 
         (function() {
-            console.log('SurfWolf74: Anti-Fingerprinting Script aktiviert');
-            
             // Screen Resolution spoofing
             Object.defineProperty(screen, 'width', { value: 1920, writable: false });
             Object.defineProperty(screen, 'height', { value: 1080, writable: false });
@@ -431,8 +429,6 @@ ANTI_FINGERPRINT_JS = """
                     return Promise.resolve([]);
                 };
             }
-            
-            console.log('SurfWolf74: Browser-Fingerprinting-Schutz aktiviert');
         })();
 """
 
@@ -487,6 +483,81 @@ def get_user_agent():
     return _USER_AGENT_CACHE
 
 
+# -------- Suche (eine Quelle der Wahrheit) --------
+SEARCH_URL_PREFIX = "https://duckduckgo.com/?q="
+
+def build_search_url(text):
+    """Such-URL für frei eingegebenen oder markierten Text. Der Text wird
+    kodiert, damit Zeichen wie & # + % die Anfrage nicht verfälschen oder
+    abschneiden (z. B. "C++" oder "Tom & Jerry"). errors="replace": ein
+    nicht kodierbares Zeichen (halbes Emoji aus einer Markierung) darf die
+    Suche nicht mit einer Ausnahme abbrechen."""
+    return QUrl(SEARCH_URL_PREFIX + quote(text, safe="", errors="replace"))
+
+
+# -------- Lesezeichen: Standardwerte und unlesbare Datei --------
+DEFAULT_BOOKMARKS = {
+    'Google': 'https://www.google.com',
+    'YouTube': 'https://www.youtube.com',
+    'GitHub': 'https://github.com'
+}
+BROKEN_BOOKMARKS_SUFFIX = ".defekt"
+# Obergrenze für aufbewahrte Sicherungen unlesbarer Lesezeichen-Dateien
+MAX_BROKEN_BOOKMARK_BACKUPS = 5
+
+def free_broken_bookmarks_path():
+    """Erster freier Sicherungsname: bookmarks.json.defekt, .defekt2, …
+    Eine ältere Sicherung wird nie überschrieben; sind alle Namen belegt,
+    gibt es einen Fehler statt stillen Datenverlusts."""
+    for number in range(1, MAX_BROKEN_BOOKMARK_BACKUPS + 1):
+        path = BOOKMARKS_FILE + BROKEN_BOOKMARKS_SUFFIX + (str(number) if number > 1 else "")
+        if not os.path.exists(path):
+            return path
+    raise OSError(
+        f"Es liegen bereits {MAX_BROKEN_BOOKMARK_BACKUPS} Sicherungen "
+        f"(bookmarks.json{BROKEN_BOOKMARKS_SUFFIX}…) vor. Bitte nicht mehr "
+        "benötigte Sicherungen löschen.")
+
+def reset_bookmarks_file(read_error=None):
+    """Legt bookmarks.json mit den Standard-Lesezeichen an. Liefert
+    (lesezeichen, hinweis); hinweis ist None oder ein Text für den Nutzer.
+
+    read_error=None: Die Datei fehlt (erster Start). Sonst existiert sie, ist
+    aber nicht lesbar – dann wird sie vorher gesichert (siehe
+    free_broken_bookmarks_path) und nur überschrieben, wenn die Sicherung
+    gelungen ist. So gehen bei einer beschädigten Datei keine Lesezeichen
+    verloren."""
+    bookmarks = {'bookmarks': dict(DEFAULT_BOOKMARKS)}
+    backup = None
+    try:
+        if read_error is not None:
+            target = free_broken_bookmarks_path()
+            shutil.copyfile(BOOKMARKS_FILE, target)
+            backup = target
+        with open(BOOKMARKS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(bookmarks, f, indent=4, ensure_ascii=False)
+    except OSError as e:
+        parts = [
+            f"Die Lesezeichen-Datei konnte nicht neu angelegt werden:\n{BOOKMARKS_FILE}",
+            f"Ursache: {e}",
+            "Die Standard-Lesezeichen werden nur angezeigt, nicht gespeichert.",
+        ]
+        if backup:
+            parts.append(f"Der bisherige Inhalt liegt gesichert in:\n{backup}")
+        elif read_error is not None:
+            parts.append("Die vorhandene, nicht lesbare Datei bleibt unverändert.")
+        parts.append("Bitte Schreibrechte und freien Speicherplatz prüfen.")
+        return bookmarks, "\n\n".join(parts)
+    if backup is None:
+        return bookmarks, None
+    return bookmarks, (
+        f"Die Lesezeichen-Datei war nicht lesbar:\n{read_error}\n\n"
+        f"Sie wurde gesichert als:\n{backup}\n\n"
+        "Der Browser nutzt jetzt die Standard-Lesezeichen. Um die alten "
+        "zurückzuholen: die gesicherte Datei in einem Texteditor "
+        "reparieren und wieder in bookmarks.json umbenennen.")
+
+
 # -------- Blocked Sites Management --------
 def load_blocked_sites():
     try:
@@ -496,11 +567,18 @@ def load_blocked_sites():
         return set()
 
 def save_blocked_sites(sites):
+    """Speichert die Sperrliste. Schlägt das fehl, erfährt es der Nutzer –
+    sonst wäre die Sperre nach dem nächsten Start unbemerkt wieder weg."""
     try:
         with open(BLOCKED_SITES_FILE, "w", encoding="utf-8") as f:
             json.dump(list(sites), f, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
+    except OSError as e:
+        QMessageBox.warning(
+            QApplication.activeWindow(), "Sperrliste nicht gespeichert",
+            f"Die Sperrliste konnte nicht gespeichert werden:\n{BLOCKED_SITES_FILE}\n\n"
+            f"Ursache: {e}\n\n"
+            "Die Änderung gilt nur, bis der Browser beendet wird. Bitte "
+            "Schreibrechte und freien Speicherplatz prüfen.")
 
 blocked_sites = load_blocked_sites()
 
@@ -649,12 +727,6 @@ class CustomWebEnginePage(QWebEnginePage):
 
     def acceptNavigationRequest(self, url, navigation_type, is_main_frame):
         """Kontrolliert welche Navigationen erlaubt werden"""
-        url_string = url.toString()
-        host = url.host().lower()
-        
-        # Debugging
-        print(f"Navigation Request: {url_string} (Type: {navigation_type}, MainFrame: {is_main_frame})")
-        
         # view-source URLs immer erlauben
         if url.scheme() == "view-source":
             return True
@@ -679,11 +751,6 @@ class CustomWebEnginePage(QWebEnginePage):
             
         # Alle anderen Navigationen erlauben
         return True
-
-    def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
-        """JavaScript Konsole Nachrichten anzeigen"""
-        print(f"JS Console: {message} (Line: {lineNumber})")
-        super().javaScriptConsoleMessage(level, message, lineNumber, sourceID)
 
 
 # -------- BrowserTab (KORRIGIERT) --------
@@ -892,8 +959,7 @@ class BrowserTab(QWebEngineView):
 
     def search_text(self, text):
         """Sucht den ausgewählten Text"""
-        search_url = f"https://duckduckgo.com/?q={text}"
-        self.browser_window.add_new_tab(search_url)
+        self.browser_window.add_new_tab(build_search_url(text))
 
     def show_dev_tools(self):
         """Zeigt die Entwicklertools"""
@@ -1028,7 +1094,7 @@ class BrowserWindow(QMainWindow):
                 data = json.load(f)
                 
             # Verschiedene Bookmark-Formate handhaben
-            if isinstance(data, dict) and 'bookmarks' in data:
+            if isinstance(data, dict) and isinstance(data.get('bookmarks'), dict):
                 bookmarks = data
             elif isinstance(data, list):
                 # Altes Format: Liste zu Dict konvertieren
@@ -1039,21 +1105,17 @@ class BrowserWindow(QMainWindow):
                     elif isinstance(item, str):
                         bookmarks['bookmarks'][item] = 'https://www.google.com'
             else:
-                raise Exception("Unbekanntes Format")
-                
-        except (FileNotFoundError, json.JSONDecodeError, Exception):
-            bookmarks = {
-                'bookmarks': {
-                    'Google': 'https://www.google.com',
-                    'YouTube': 'https://www.youtube.com',
-                    'GitHub': 'https://github.com'
-                }
-            }
-            try:
-                with open(BOOKMARKS_FILE, 'w', encoding='utf-8') as f:
-                    json.dump(bookmarks, f, indent=4, ensure_ascii=False)
-            except Exception:
-                pass
+                raise ValueError("unbekanntes Format (weder Liste noch 'bookmarks'-Objekt)")
+        except FileNotFoundError:
+            bookmarks, note = reset_bookmarks_file()
+        except (OSError, ValueError, TypeError, RecursionError) as e:
+            # ValueError deckt auch kaputtes JSON und falsche Zeichenkodierung
+            # ab, RecursionError extrem tief verschachteltes JSON
+            bookmarks, note = reset_bookmarks_file(e)
+        else:
+            note = None
+        if note:
+            QMessageBox.warning(self, "Lesezeichen", note)
         # Entferne alle Favoriten-Buttons aus der Bookmarks-Toolbar
         bookmark_actions = []
         if hasattr(self, 'bookmarks_toolbar'):  # Neue Zwei-Toolbar-Struktur
@@ -2208,7 +2270,7 @@ class BrowserWindow(QMainWindow):
         
         # Wenn Text Leerzeichen enthält oder keine URL ist, als Suche behandeln
         if ' ' in text or not ('.' in text or text.startswith(('http://', 'https://'))):
-            url = QUrl(f"https://duckduckgo.com/?q={text}")
+            url = build_search_url(text)
         elif not text.startswith(('http://', 'https://')):
             url = QUrl(f"https://{text}")
         else:
@@ -2402,7 +2464,6 @@ def main():
         border-radius: 12px;
         margin: 8px;
         padding: 8px 16px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.07);
     }
     QPushButton {
         font-size: 18px;
