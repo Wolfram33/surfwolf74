@@ -2,6 +2,13 @@ name: Windows Build (Latest dev build)
 
 # Baut die Windows-EXE (Nuitka) + den Inno-Setup-Installer und veroeffentlicht
 # beides als oeffentliches Prerelease "latest-dev".
+#
+# Haertung (11/2026):
+# - Standardrechte nur Lesen; Schreibrecht nur fuer den Build-Job (Release).
+# - Actions auf Commit-SHA gepinnt; Dependabot (.github/dependabot.yml) haelt
+#   die Hashes aktuell.
+# - Checkout ohne gespeichertes Token (persist-credentials: false).
+# - FFmpeg-Download wird gegen die Pruefsummendatei des Releases geprueft.
 
 on:
   push:
@@ -12,7 +19,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: build-windows
@@ -21,12 +28,17 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write   # Prerelease "latest-dev" ersetzen
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Python einrichten
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
 
@@ -48,8 +60,20 @@ jobs:
       - name: FFmpeg-DLLs beschaffen (fuer den Nuitka-Build noetig)
         shell: pwsh
         run: |
-          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip"
-          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          $base = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest"
+          $name = "ffmpeg-master-latest-win64-gpl-shared.zip"
+          Invoke-WebRequest -Uri "$base/$name" -OutFile ffmpeg.zip
+          # Pruefsumme gegen die checksums.sha256 desselben Releases pruefen.
+          # Schuetzt vor kaputten oder unterwegs veraenderten Downloads; gegen
+          # ein kompromittiertes Upstream-Release hilft nur ein fest gepinnter
+          # Build mit eigener Pruefsumme.
+          Invoke-WebRequest -Uri "$base/checksums.sha256" -OutFile ffmpeg.sha256
+          $line = Select-String -Path ffmpeg.sha256 -SimpleMatch "  $name" | Select-Object -First 1
+          if (-not $line) { throw "Keine Pruefsumme fuer $name gefunden" }
+          $expected = ($line.Line -split '\s+')[0].ToLower()
+          $actual = (Get-FileHash -Algorithm SHA256 ffmpeg.zip).Hash.ToLower()
+          if ($actual -ne $expected) { throw "FFmpeg-Pruefsumme stimmt nicht: $actual statt $expected" }
+          Write-Host "FFmpeg SHA256 ok: $actual"
           Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg_tmp -Force
           $dlls = Get-ChildItem -Path ffmpeg_tmp -Recurse -Filter *.dll | Where-Object { $_.Directory.Name -eq 'bin' }
           Copy-Item $dlls.FullName -Destination . -Force
@@ -79,10 +103,12 @@ jobs:
 
       - name: Installer bauen
         shell: pwsh
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
-            "/DMyAppVersion=${{ steps.ver.outputs.version }}" `
+            "/DMyAppVersion=$env:APP_VERSION" `
             "windows-build\setup.iss"
           if (-not (Test-Path "dist\SurfWolf74-Setup.exe")) { throw "Installer wurde nicht erzeugt" }
 
@@ -94,12 +120,17 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ steps.ver.outputs.version }}
         run: |
+          $sums = foreach ($f in 'dist\SurfWolf74-Setup.exe', 'dist\SurfWolf74-portable.zip') {
+            "$((Get-FileHash -Algorithm SHA256 $f).Hash.ToLower())  $(Split-Path $f -Leaf)"
+          }
+          Set-Content -Path dist\SHA256SUMS.txt -Value $sums -Encoding ascii
           $notes = @(
-            "Automatischer Windows-Build von master (Commit ${{ github.sha }}). Entwicklungs-Build, kein stabiles Release.",
+            "Automatischer Windows-Build von master (Commit $env:GITHUB_SHA). Entwicklungs-Build, kein stabiles Release.",
             "",
             "**Hinweis zu Videos (Windows):** Reine H.264-Videos (z. B. **x.com / Twitter**) spielen aus Lizenzgruenden **nicht** im Browser ab; YouTube u. a. (VP9) laufen normal. Fuer H.264-Seiten den Button **Extern (Strg+E)** nutzen - er oeffnet die Seite im System-Browser. Die Linux-Version spielt H.264 nativ ab."
           )
           Set-Content -Path release-notes.md -Value $notes -Encoding utf8
           gh release delete latest-dev --yes --cleanup-tag
-          gh release create latest-dev --prerelease --title "Latest development build (v${{ steps.ver.outputs.version }})" --notes-file release-notes.md "dist\SurfWolf74-Setup.exe" "dist\SurfWolf74-portable.zip"
+          gh release create latest-dev --prerelease --title "Latest development build (v$env:APP_VERSION)" --notes-file release-notes.md "dist\SurfWolf74-Setup.exe" "dist\SurfWolf74-portable.zip" "dist\SHA256SUMS.txt"
